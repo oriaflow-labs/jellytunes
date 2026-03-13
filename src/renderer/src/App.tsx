@@ -16,6 +16,11 @@ interface JellyfinConfig {
   userId?: string
 }
 
+interface JellyfinUser {
+  Id: string
+  Name: string
+}
+
 interface Artist {
   Id: string
   Name: string
