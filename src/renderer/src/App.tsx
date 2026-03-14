@@ -133,8 +133,11 @@ function App(): JSX.Element {
             })
             
             if (usersRes.ok) {
-              usersData = await usersRes.json()
-              console.log('Users fetched from /Users endpoint:', usersData.length, usersData.map(u => u.Name))
+              const json = await usersRes.json()
+              usersData = json
+              if (usersData) {
+                console.log('Users fetched from /Users endpoint:', usersData.length, usersData.map(u => u.Name))
+              }
             } else {
               console.error('/Users endpoint failed:', usersRes.status, usersRes.statusText)
             }
@@ -423,6 +426,9 @@ function App(): JSX.Element {
             <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
               {users.map((user) => (
                 <button
+                  data-testid="user-option"
+                  data-user-id={user.Id}
+                  data-user-name={user.Name}
                   key={user.Id as string}
                   onClick={() => handleUserSelect(user)}
                   className="w-full flex items-center gap-3 p-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors text-left"
@@ -625,7 +631,7 @@ function App(): JSX.Element {
 
           {/* Content Grid */}
           {activeSection === 'library' && (
-            <div className="grid gap-4">
+            <div data-testid="library-content" className="grid gap-4">
               {activeLibrary === 'artists' && artists
                 .filter(a => !searchQuery || a.Name.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map(artist => (

@@ -48,3 +48,18 @@ Feature: Autenticación Jellyfin
     And el usuario hace click en el botón "Conectar"
     Then las credenciales deberían guardarse en el almacenamiento local
     And en la próxima apertura los campos deberían estar prellenados
+  # Regression test: User selector should show when /Users/Me fails (GitHub Issue #14559)
+  Scenario: Selector de usuario mostrado cuando /Users/Me falla con API key
+    Given el servidor Jellyfin no soporta /Users/Me con API keys
+    And hay 2 usuarios en el servidor: "admin" y "user"
+    When el usuario ingresa credenciales válidas
+    And /Users/Me retorna 400 Bad Request
+    Then debería mostrar el selector de usuarios
+    And debería listar todos los usuarios disponibles
+
+  # Regression test: User selector should allow selection
+  Scenario: Usuario puede seleccionar del selector
+    Given el selector de usuarios está visible
+    When el usuario hace click en el usuario "tjd"
+    Then debería mostrar la biblioteca de ese usuario
+    And debería guardar la selección del usuario

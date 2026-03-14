@@ -114,3 +114,40 @@ Then('en la próxima apertura los campos deberían estar prellenados', async fun
   const urlInput = this.page!.locator('[data-testid="server-url-input"]');
   await expect(urlInput).toHaveValue('https://jellyfin.example.com');
 });
+
+// Regression test: User selector should show when /Users/Me fails
+Given('el servidor Jellyfin no soporta /Users/Me con API keys', async function(this: ICustomWorld) {
+  this.testData!.usersMeFails = true
+})
+
+Given('hay {int} usuarios en el servidor: {string}', async function(this: ICustomWorld, count: number, userList: string) {
+  this.testData!.userCount = count
+  this.testData!.userList = userList
+})
+
+Then('debería mostrar el selector de usuarios', async function(this: ICustomWorld) {
+  await this.page!.waitForSelector('[data-testid="user-selector-screen"]', { timeout: 5000 })
+})
+
+Then('debería listar todos los usuarios disponibles', async function(this: ICustomWorld) {
+  const userButtons = await this.page!.$$('[data-testid="user-option"]')
+  expect(userButtons.length).toBeGreaterThan(0)
+})
+
+// Regression test: User can select from selector
+Given('el selector de usuarios está visible', async function(this: ICustomWorld) {
+  await this.page!.waitForSelector('[data-testid="user-selector-screen"]', { timeout: 5000 })
+})
+
+When('el usuario hace click en el usuario {string}', async function(this: ICustomWorld, userName: string) {
+  await this.page!.click(`[data-user-name="${userName}"]`)
+})
+
+Then('debería mostrar la biblioteca de ese usuario', async function(this: ICustomWorld) {
+  await this.page!.waitForSelector('[data-testid="library-content"]', { timeout: 5000 })
+})
+
+Then('debería guardar la selección del usuario', async function(this: ICustomWorld) {
+  const userId = await this.page!.evaluate(() => localStorage.getItem('jellyfin_userId'))
+  expect(userId).toBeTruthy()
+})
