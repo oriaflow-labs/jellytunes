@@ -622,7 +622,7 @@ function App(): JSX.Element {
         // ES ARTISTA → obtener álbumes y luego tracks
         console.log('[DEBUG] Found in artist index, processing:', id)
         try {
-          const artistRes = await fetch(`${baseUrl}/users/${userId}/items?artistIds=${id}&includeItemTypes=MusicAlbum`, { headers })
+          const artistRes = await fetch(`${baseUrl}/users/${userId}/items?AlbumArtistIds=${id}&includeItemTypes=MusicAlbum&Recursive=true&fields=Path`, { headers })
           if (artistRes.ok) {
             const albums = await artistRes.json()
             console.log(`[DEBUG] Artist ${id}: found ${albums.Items?.length || 0} albums`)

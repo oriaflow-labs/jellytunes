@@ -175,7 +175,7 @@ class SyncApiImpl implements SyncApi {
 
   async getArtistTracks(artistId: string): Promise<TrackInfo[]> {
     // First get albums, then tracks for each album
-    const albumsEndpoint = `/Users/${this.userId}/Items?artistIds=${artistId}&includeItemTypes=MusicAlbum`;
+    const albumsEndpoint = `/Users/${this.userId}/Items?AlbumArtistIds=${artistId}&includeItemTypes=MusicAlbum&Recursive=true&Fields=Path,MediaSources`;
     const albumsData = await this.request<{ Items: JellyfinAlbumItem[] }>(albumsEndpoint);
     
     const tracks: TrackInfo[] = [];
@@ -189,7 +189,7 @@ class SyncApiImpl implements SyncApi {
   }
 
   async getAlbumTracks(albumId: string): Promise<TrackInfo[]> {
-    const endpoint = `/Users/${this.userId}/Items?parentId=${albumId}&includeItemTypes=Audio&recursive=true`;
+    const endpoint = `/Users/${this.userId}/Items?parentId=${albumId}&includeItemTypes=Audio&Recursive=true&Fields=Path,MediaSources`;
     const data = await this.request<{ Items: JellyfinTrackItem[] }>(endpoint);
     
     return (data.Items ?? [])
