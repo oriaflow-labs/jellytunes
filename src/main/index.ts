@@ -27,26 +27,10 @@ interface DeviceInfo {
 }
 
 async function listUsbDevices(): Promise<UsbDevice[]> {
-  try {
-    const drivelist = await import('drivelist')
-    const devices = await drivelist.list()
-    const removableDevices: UsbDevice[] = devices
-      .filter((device: any) => device.isRemovable || device.isUSB)
-      .map((device: any) => ({
-        device: device.device,
-        displayName: device.description || device.mountpoints?.[0]?.path || 'USB Device',
-        size: device.size || 0,
-        mountpoints: device.mountpoints || [],
-        isRemovable: device.isRemovable || false,
-        vendorName: device.vendorName,
-        serialNumber: device.serialNumber
-      }))
-    log.info(`Found ${removableDevices.length} removable USB devices`)
-    return removableDevices
-  } catch (error) {
-    log.error('Error listing USB devices:', error)
-    return listMountedVolumesFallback()
-  }
+  // drivelist removed - using folder selection instead
+  // For USB detection, user selects folder manually
+  log.info('USB detection disabled - using folder selection dialog')
+  return listMountedVolumesFallback()
 }
 
 function listMountedVolumesFallback(): UsbDevice[] {

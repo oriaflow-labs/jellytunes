@@ -142,7 +142,7 @@ function App(): JSX.Element {
       const response = await fetch(`${normalizedUrl}/System/Info/Public`, {
         method: 'GET',
         headers: { 
-          'X-MediaBrowser-Token': apiKey,
+          'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey,
           'Content-Type': 'application/json'
         }
       })
@@ -159,7 +159,7 @@ function App(): JSX.Element {
       try {
         // Try /Users/Me endpoint
         const userRes = await fetch(`${normalizedUrl}/Users/Me`, {
-          headers: { 'X-MediaBrowser-Token': apiKey }
+          headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
         })
         
         if (userRes.ok) {
@@ -179,7 +179,7 @@ function App(): JSX.Element {
           
           try {
             const usersRes = await fetch(`${normalizedUrl}/Users`, {
-              headers: { 'X-MediaBrowser-Token': apiKey }
+              headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
             })
             
             if (usersRes.ok) {
@@ -237,7 +237,7 @@ function App(): JSX.Element {
           console.warn('/Users/Me failed with status', userRes.status, '- showing user selector')
           try {
             const usersRes = await fetch(`${normalizedUrl}/Users`, {
-              headers: { 'X-MediaBrowser-Token': apiKey }
+              headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
             })
             if (usersRes.ok) {
               const usersData: JellyfinUser[] = await usersRes.json()
@@ -312,7 +312,7 @@ function App(): JSX.Element {
   // Load library statistics from /Users/{userId}/Items/Counts
   const loadStats = async (url: string, apiKey: string, userId: string): Promise<void> => {
     const headers = { 
-      'X-MediaBrowser-Token': apiKey,
+      'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey,
       'Content-Type': 'application/json'
     }
     const baseUrl = url.replace(/\/$/, '')
@@ -350,7 +350,7 @@ function App(): JSX.Element {
     if (!jellyfinConfig || !userId) return
     
     const headers = { 
-      'X-MediaBrowser-Token': jellyfinConfig.apiKey,
+      'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'X-Emby-Token': jellyfinConfig.apiKey,
       'Content-Type': 'application/json'
     }
     const baseUrl = jellyfinConfig.url.replace(/\/$/, '')
@@ -489,7 +489,7 @@ function App(): JSX.Element {
   const fetchTracksForSync = async (ids: string[]): Promise<Array<{id: string, name: string, path: string, format: string}>> => {
     if (!jellyfinConfig || !userId) return []
     
-    const headers = { 'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'Content-Type': 'application/json' }
+    const headers = { 'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'X-Emby-Token': jellyfinConfig.apiKey, 'Content-Type': 'application/json' }
     const baseUrl = jellyfinConfig.url.replace(/\/$/, '')
     const tracks: Array<{id: string, name: string, path: string, format: string}> = []
     
@@ -601,7 +601,7 @@ function App(): JSX.Element {
   // Load initial library data (precarga todas las secciones para el sidebar)
   const loadLibrary = async (url: string, apiKey: string, userId: string): Promise<void> => {
     const headers = { 
-      'X-MediaBrowser-Token': apiKey,
+      'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey,
       'Content-Type': 'application/json'
     }
     const baseUrl = url.replace(/\/$/, '')
@@ -696,7 +696,7 @@ function App(): JSX.Element {
     setIsLoadingMore(true)
     
     const headers = { 
-      'X-MediaBrowser-Token': jellyfinConfig.apiKey,
+      'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'X-Emby-Token': jellyfinConfig.apiKey,
       'Content-Type': 'application/json'
     }
     const baseUrl = jellyfinConfig.url.replace(/\/$/, '')
