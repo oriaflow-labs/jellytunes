@@ -526,194 +526,85 @@ function App(): JSX.Element {
   }
 
   // Fetch tracks for sync from Jellyfin
+  // Fetch tracks for sync from Jellyfin - simplified approach
   const fetchTracksForSync = async (ids: string[]): Promise<Array<{id: string, name: string, path: string, format: string}>> => {
-    console.log('[DEBUG fetchTracksForSync] Called with IDs:', ids)
-    console.log('[DEBUG fetchTracksForSync] jellyfinConfig:', jellyfinConfig ? 'present' : 'null')
-    console.log('[DEBUG fetchTracksForSync] userId:', userId)
+    console.log('[DEBUG] fetchTracksForSync called with IDs:', ids)
     
     if (!jellyfinConfig || !userId) {
-      console.warn('[DEBUG fetchTracksForSync] No jellyfinConfig or userId')
+      console.warn('[DEBUG] No jellyfinConfig or userId')
       return []
     }
     
-    // Filter out invalid IDs
     const validIds = ids.filter(id => id && typeof id === 'string' && id.trim() !== '')
-    console.log('[DEBUG fetchTracksForSync] Valid IDs after filter:', validIds)
-    
-    if (validIds.length === 0) {
-      console.warn('No valid IDs provided for sync')
-      return []
-    }
+    if (validIds.length === 0) return []
     
     const headers = { 'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'X-Emby-Token': jellyfinConfig.apiKey, 'Content-Type': 'application/json' }
     const baseUrl = jellyfinConfig.url.replace(/\/$/, '')
-    console.log('[DEBUG fetchTracksForSync] Base URL:', baseUrl)
-    const tracks: Array<{id: string, name: string, path: string, format: string}> = []
+    console.log('[DEBUG] Base URL:', baseUrl, 'UserId:', userId)
     
-    for (const id of validIds) {
-      console.log('[DEBUG fetchTracksForSync] Processing ID:', id)
-      try {
-        // First, get item info to determine its type
-        const itemUrl = `${baseUrl}/Items/${id}`
-        console.log('[DEBUG fetchTracksForSync] Fetching item info from:', itemUrl)
-        const itemRes = await fetch(itemUrl, { headers })
-        
-        if (!itemRes.ok) {
-          console.warn(`[DEBUG fetchTracksForSync] Item ${id} not found or inaccessible: ${itemRes.status} - ${itemRes.statusText}`)
-          // Try fallback: attempt to get tracks from different endpoints
-          console.log('[DEBUG fetchTracksForSync] Trying fallback approach for ID:', id)
-          
-          // Try as album first
-          const albumTracksRes = await fetch(`${baseUrl}/Users/${userId}/Items?ParentId=${id}&IncludeItemTypes=Audio`, { headers })
-          if (albumTracksRes.ok) {
-            const tracksData = await albumTracksRes.json()
-            console.log('[DEBUG fetchTracksForSync] Fallback - treating as album, tracks found:', tracksData.Items?.length || 0)
-            for (const track of tracksData.Items || []) {
-              if (track.MediaSources?.[0]?.Path) {
-                tracks.push({
-                  id: track.Id,
-                  name: track.Name,
-                  path: track.MediaSources[0].Path,
-                  format: track.MediaSources[0].Container || 'unknown'
-                })
-              }
-            }
-            if (tracks.length > 0) continue
-          }
-          
-          // Try as artist
-          const artistAlbumsRes = await fetch(`${baseUrl}/Users/${userId}/Items?ArtistIds=${id}&IncludeItemTypes=MusicAlbum`, { headers })
-          if (artistAlbumsRes.ok) {
-            const albumsData = await artistAlbumsRes.json()
-            console.log('[DEBUG fetchTracksForSync] Fallback - treating as artist, albums found:', albumsData.Items?.length || 0)
-            for (const album of albumsData.Items || []) {
-              const tracksRes = await fetch(`${baseUrl}/Users/${userId}/Items?ParentId=${album.Id}&IncludeItemTypes=Audio`, { headers })
-              if (tracksRes.ok) {
-                const tracksData = await tracksRes.json()
-                for (const track of tracksData.Items || []) {
-                  if (track.MediaSources?.[0]?.Path) {
-                    tracks.push({
-                      id: track.Id,
-                      name: track.Name,
-                      path: track.MediaSources[0].Path,
-                      format: track.MediaSources[0].Container || 'unknown'
-                    })
-                  }
-                }
-              }
-            }
-          }
-          
-          // Try as playlist
-          const playlistItemsRes = await fetch(`${baseUrl}/Playlists/${id}/Items`, { headers })
-          if (playlistItemsRes.ok) {
-            const items = await playlistItemsRes.json()
-            console.log('[DEBUG fetchTracksForSync] Fallback - treating as playlist, items found:', items.Items?.length || 0)
-            for (const item of items.Items || []) {
-              if (item.MediaSources?.[0]?.Path) {
-                tracks.push({
-                  id: item.Id,
-                  name: item.Name,
-                  path: item.MediaSources[0].Path,
-                  format: item.MediaSources[0].Container || 'unknown'
-                })
-              }
-            }
-          }
-          
-          continue
-        }
-        
-        const item = await itemRes.json()
-        console.log('[DEBUG fetchTracksForSync] Item response:', item.Type, item.Name)
-        
-        if (item.Type === 'MusicAlbum') {
-          // For albums: get tracks directly using the correct endpoint
-          const tracksRes = await fetch(`${baseUrl}/Users/${userId}/Items?ParentId=${id}&IncludeItemTypes=Audio`, { headers })
-          if (tracksRes.ok) {
-            const tracksData = await tracksRes.json()
-            for (const track of tracksData.Items || []) {
-              if (track.MediaSources?.[0]?.Path) {
-                tracks.push({
-                  id: track.Id,
-                  name: track.Name,
-                  path: track.MediaSources[0].Path,
-                  format: track.MediaSources[0].Container || 'unknown'
-                })
-              }
-            }
-          }
-        } else if (item.Type === 'Artist' || item.Type === 'Person' || item.Type === 'MusicArtist') {
-          // For artists: first get their albums, then tracks from each album
-          console.log('[DEBUG fetchTracksForSync] Processing artist:', item.Name)
-          const albumsRes = await fetch(`${baseUrl}/Users/${userId}/Items?ArtistIds=${id}&IncludeItemTypes=MusicAlbum`, { headers })
-          if (albumsRes.ok) {
-            const albumsData = await albumsRes.json()
-            console.log('[DEBUG fetchTracksForSync] Albums for artist:', albumsData.Items?.length || 0)
-            for (const album of albumsData.Items || []) {
-              // Get tracks for each album
-              const tracksRes = await fetch(`${baseUrl}/Users/${userId}/Items?ParentId=${album.Id}&IncludeItemTypes=Audio`, { headers })
-              if (tracksRes.ok) {
-                const tracksData = await tracksRes.json()
-                console.log('[DEBUG fetchTracksForSync] Tracks for album:', album.Name, tracksData.Items?.length || 0)
-                for (const track of tracksData.Items || []) {
-                  if (track.MediaSources?.[0]?.Path) {
-                    tracks.push({
-                      id: track.Id,
-                      name: track.Name,
-                      path: track.MediaSources[0].Path,
-                      format: track.MediaSources[0].Container || 'unknown'
-                    })
-                  }
-                }
-              }
-            }
-          } else {
-            console.warn('[DEBUG fetchTracksForSync] Failed to fetch albums for artist:', albumsRes.status)
-          }
-        } else if (item.Type === 'Playlist') {
-          // For playlists: get playlist items
-          const itemsRes = await fetch(`${baseUrl}/Playlists/${id}/Items`, { headers })
-          if (itemsRes.ok) {
-            const items = await itemsRes.json()
-            for (const item of items.Items || []) {
-              if (item.MediaSources?.[0]?.Path) {
-                tracks.push({
-                  id: item.Id,
-                  name: item.Name,
-                  path: item.MediaSources[0].Path,
-                  format: item.MediaSources[0].Container || 'unknown'
-                })
-              }
-            }
-          }
-        } else if (item.Type === 'Audio') {
-          // Already a track
-          if (item.MediaSources?.[0]?.Path) {
-            tracks.push({
-              id: item.Id,
-              name: item.Name,
-              path: item.MediaSources[0].Path,
-              format: item.MediaSources[0].Container || 'unknown'
-            })
-          }
-        } else {
-          console.warn(`Unknown item type: ${item.Type} for item ${id}`)
-        }
-      } catch (e) {
-        console.error('Error fetching tracks for', id, e)
+    const tracks: Array<{id: string, name: string, path: string, format: string}> = []
+    const addedIds = new Set<string>()
+    
+    const addTrack = (track: any) => {
+      if (track.Id && track.MediaSources?.[0]?.Path && !addedIds.has(track.Id)) {
+        addedIds.add(track.Id)
+        tracks.push({
+          id: track.Id,
+          name: track.Name,
+          path: track.MediaSources[0].Path,
+          format: track.MediaSources[0].Container || 'unknown'
+        })
       }
     }
     
-    // Deduplicate tracks by ID
-    const seen = new Set<string>()
-    const uniqueTracks = tracks.filter(track => {
-      if (seen.has(track.id)) return false
-      seen.add(track.id)
-      return true
-    })
+    for (const id of validIds) {
+      console.log('[DEBUG] Processing ID:', id)
+      
+      // Try 1: As album (direct children)
+      try {
+        const albumRes = await fetch(`${baseUrl}/users/${userId}/items?parentId=${id}&includeItemTypes=Audio&recursive=true`, { headers })
+        if (albumRes.ok) {
+          const data = await albumRes.json()
+          console.log(`[DEBUG] As album: found ${data.Items?.length || 0} tracks`)
+          for (const track of data.Items || []) addTrack(track)
+        }
+      } catch (e) { console.warn('[DEBUG] Album error:', e) }
+      
+      if (tracks.length > 0) { console.log('[DEBUG] Found tracks as album'); continue }
+      
+      // Try 2: As artist
+      try {
+        const artistRes = await fetch(`${baseUrl}/users/${userId}/items?artistIds=${id}&includeItemTypes=MusicAlbum`, { headers })
+        if (artistRes.ok) {
+          const albums = await artistRes.json()
+          console.log(`[DEBUG] As artist: found ${albums.Items?.length || 0} albums`)
+          for (const album of albums.Items || []) {
+            const tracksRes = await fetch(`${baseUrl}/users/${userId}/items?parentId=${album.Id}&includeItemTypes=Audio`, { headers })
+            if (tracksRes.ok) {
+              const tracksData = await tracksRes.json()
+              for (const track of tracksData.Items || []) addTrack(track)
+            }
+          }
+        }
+      } catch (e) { console.warn('[DEBUG] Artist error:', e) }
+      
+      // Try 3: As playlist
+      if (tracks.length === 0) {
+        try {
+          const playlistRes = await fetch(`${baseUrl}/playlists/${id}/items`, { headers })
+          if (playlistRes.ok) {
+            const items = await playlistRes.json()
+            console.log(`[DEBUG] As playlist: found ${items.Items?.length || 0} items`)
+            for (const item of items.Items || []) addTrack(item)
+          }
+        } catch (e) { console.warn('[DEBUG] Playlist error:', e) }
+      }
+      
+      console.log(`[DEBUG] After ${id}: total tracks = ${tracks.length}`)
+    }
     
-    return uniqueTracks
+    console.log('[DEBUG] Final track count:', tracks.length)
+    return tracks
   }
 
   // Handle sync start
