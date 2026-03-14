@@ -147,7 +147,6 @@ function App(): JSX.Element {
             setUsers(usersData)
             setPendingConfig({ url, apiKey })
             setShowUserSelector(true)
-            setIsConnecting(false)
             console.log('Showing user selector (from /Users/Me 400 fallback)')
             return false
           } else {
@@ -163,7 +162,6 @@ function App(): JSX.Element {
                   setUsers(publicUsersData)
                   setPendingConfig({ url, apiKey })
                   setShowUserSelector(true)
-                  setIsConnecting(false)
                   console.log('Showing user selector (from public endpoint)')
                   return false
                 }
@@ -194,7 +192,6 @@ function App(): JSX.Element {
                 setUsers(usersData)
                 setPendingConfig({ url, apiKey })
                 setShowUserSelector(true)
-                setIsConnecting(false)
                 console.log('Showing user selector')
                 return false
               }
@@ -337,8 +334,8 @@ function App(): JSX.Element {
     window.api?.onUsbDetach(() => window.api?.listUsbDevices().then(setDevices))
   }, [])
 
-  // Login screen if not connected
-  if (!isConnected && !isConnecting) {
+  // Login screen if not connected and not showing user selector
+  if (!isConnected && !isConnecting && !showUserSelector) {
     return (
       <div data-testid="auth-screen" className="h-screen flex items-center justify-center bg-zinc-950 text-zinc-100">
         <div className="w-full max-w-md p-8">
@@ -407,9 +404,10 @@ function App(): JSX.Element {
   }
 
   // User selector modal (shown when /Users/Me fails with API key)
-  if (showUserSelector) {
+  // MUST check this BEFORE the login form check (!isConnected && !isConnecting)
+  if (showUserSelector && pendingConfig) {
     return (
-      <div className="h-screen flex items-center justify-center bg-zinc-950 text-zinc-100">
+      <div data-testid="user-selector-screen" className="h-screen flex items-center justify-center bg-zinc-950 text-zinc-100">
         <div className="w-full max-w-md p-8">
           <div className="flex items-center gap-3 mb-8 justify-center">
             <Music className="w-10 h-10 text-blue-500" />
