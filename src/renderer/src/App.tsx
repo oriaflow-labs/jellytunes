@@ -1014,6 +1014,11 @@ function App(): JSX.Element {
               >
                 <HardDrive className="w-4 h-4" />
                 Sync to Device
+                {selectedTracks.size > 0 && (
+                  <span className="ml-auto bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
+                    {selectedTracks.size}
+                  </span>
+                )}
               </button>
             </nav>
           </div>
@@ -1059,15 +1064,6 @@ function App(): JSX.Element {
               {activeLibrary === 'playlists' && 'Playlists'}
               {activeSection === 'devices' && 'USB Devices'}
             </h2>
-            {selectedTracks.size > 0 && (
-              <button 
-                onClick={() => setActiveSection('sync')}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Sync ({selectedTracks.size})
-              </button>
-            )}
           </div>
 
           {/* Selection Controls */}
