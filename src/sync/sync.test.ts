@@ -497,10 +497,11 @@ describe('sync-core', () => {
             ],
             errors: [],
           }),
+          // Now using downloadItem instead of copyFile
+          downloadItem: async () => { throw new Error('Download failed - file not found'); },
         }),
         fs: {
           ...createMockFileSystem(),
-          copyFile: async () => { throw new Error('File not found'); },
         },
       });
       

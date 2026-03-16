@@ -47,7 +47,6 @@ export interface FileSystem {
  */
 export function createNodeFileSystem(): FileSystem {
   const fs = require('fs');
-  const { promisify } = require('util');
   const { stat, mkdir, unlink, writeFile, readFile, readdir } = require('fs/promises');
   
   return {
@@ -362,20 +361,15 @@ export async function getUniqueFilename(
 ): Promise<string> {
   const ext = filename.match(/\.[^.]+$/)?.[0] || '';
   const baseName = filename.replace(/\.[^.]+$/, '');
-  
+
   let finalName = filename;
   let counter = 1;
-  
-  const fullPath = `${basePath}/${finalName}`;
-  
-  // Ensure directory exists (unique filename check inside destination)
-  const destPath = `${baseName}/${finalName}`;
-  
+
   while (await fs.exists(`${basePath}/${finalName}`)) {
     finalName = `${baseName} (${counter})${ext}`;
     counter++;
   }
-  
+
   return finalName;
 }
 

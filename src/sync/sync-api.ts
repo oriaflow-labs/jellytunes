@@ -192,42 +192,27 @@ class SyncApiImpl implements SyncApi {
   }
 
   async getAlbumTracks(albumId: string): Promise<TrackInfo[]> {
-    // First get album info for year
-    let albumYear: number | undefined;
-    try {
-      const albumData = await this.request<{ ProductionYear?: number }>(`/Users/${this.userId}/Items/${albumId}`);
-      albumYear = albumData.ProductionYear;
-    } catch {
-      // Ignore - year is optional
-    }
-    
-    const endpoint = `/Users/${this.userId}/Items?parentId=${albumId}&includeItemTypes=Audio&Recursive=true&Fields=Path,MediaSources,AlbumId`;
-    const data = await this.request<{ Items: JellyfinTrackItem[] }>(endpoint);
-    
-    const tracks = await Promise.all(
-      (data.Items ?? [])
-        .filter(item => item.MediaSources?.[0]?.Path)
-        .map(async item => {
-          const track = await this.trackItemToInfo(item);
-          track.year = track.year ?? albumYear;
-          return track;
-        })
-    );
-    
-    return tracks;
+    const [albumData, tracksData] = await Promise.all([
+      this.request<{ ProductionYear?: number }>(`/Users/${this.userId}/Items/${albumId}`)
+        .catch(() => ({ ProductionYear: undefined })),
+      this.request<{ Items: JellyfinTrackItem[] }>(
+        `/Users/${this.userId}/Items?parentId=${albumId}&includeItemTypes=Audio&Recursive=true&Fields=Path,MediaSources,AlbumId`
+      ),
+    ]);
+
+    return (tracksData.Items ?? [])
+      .filter(item => item.MediaSources?.[0]?.Path)
+      .map(item => this.trackItemToInfo(item, albumData.ProductionYear));
   }
 
   async getPlaylistTracks(playlistId: string): Promise<TrackInfo[]> {
-    const endpoint = `/Playlists/${playlistId}/Items?Fields=Path,MediaSources,AlbumId,ParentId`;
-    const data = await this.request<{ Items: JellyfinTrackItem[] }>(endpoint);
-    
-    const tracks = await Promise.all(
-      (data.Items ?? [])
-        .filter(item => item.MediaSources?.[0]?.Path)
-        .map(item => this.trackItemToInfo(item))
+    const data = await this.request<{ Items: JellyfinTrackItem[] }>(
+      `/Playlists/${playlistId}/Items?Fields=Path,MediaSources,AlbumId,ParentId`
     );
-    
-    return tracks;
+
+    return (data.Items ?? [])
+      .filter(item => item.MediaSources?.[0]?.Path)
+      .map(item => this.trackItemToInfo(item));
   }
 
   async getTracksForItems(
@@ -307,9 +292,10 @@ class SyncApiImpl implements SyncApi {
 
   async downloadItem(itemId: string): Promise<Buffer> {
     const url = `${this.baseUrl}/Items/${itemId}/Download`;
-    
+    const DOWNLOAD_TIMEOUT_MULTIPLIER = 10;
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 10); // Longer timeout for downloads
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * DOWNLOAD_TIMEOUT_MULTIPLIER);
     
     try {
       const response = await this.fetchFn(url, {
@@ -347,27 +333,20 @@ class SyncApiImpl implements SyncApi {
     }
   }
 
-  private async trackItemToInfo(item: JellyfinTrackItem): Promise<TrackInfo> {
+  /**
+   * Maps a Jellyfin track item to TrackInfo.
+   * Year is injected separately (resolved at album level to avoid N+1 requests).
+   */
+  private trackItemToInfo(item: JellyfinTrackItem, albumYear?: number): TrackInfo {
     const source = item.MediaSources?.[0];
-    
-    let year: number | undefined;
-    // Try to get album year from parent item
-    if (item.AlbumName) {
-      try {
-        const albumData = await this.request<{ ProductionYear?: number }>(`/Users/${this.userId}/Items/${item.AlbumId || item.ParentId}`);
-        year = albumData.ProductionYear;
-      } catch {
-        // Ignore - year is optional
-      }
-    }
-    
+
     return {
       id: item.Id,
       name: item.Name,
       album: item.AlbumName,
       artists: item.Artists,
       albumArtist: item.AlbumArtist,
-      year,
+      year: albumYear,
       path: source?.Path ?? '',
       format: source?.Container ?? 'unknown',
       size: source?.Size,

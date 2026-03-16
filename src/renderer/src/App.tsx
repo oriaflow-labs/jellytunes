@@ -26,11 +26,6 @@ interface JellyfinConfig {
   userId?: string
 }
 
-interface JellyfinUser {
-  Id: string
-  Name: string
-}
-
 interface Artist {
   Id: string
   Name: string
@@ -180,143 +175,74 @@ function App(): JSX.Element {
   // Main content scroll ref for restoring scroll position
   const contentScrollRef = useRef<HTMLDivElement>(null)
 
+  const jellyfinHeaders = (apiKey: string) => ({
+    'X-MediaBrowser-Token': apiKey,
+    'X-Emby-Token': apiKey,
+    'Content-Type': 'application/json',
+  })
+
+  const fetchUserList = async (baseUrl: string, apiKey: string): Promise<JellyfinUser[]> => {
+    const headers = jellyfinHeaders(apiKey)
+
+    // Try authenticated users list first
+    const authRes = await fetch(`${baseUrl}/Users`, { headers }).catch(() => null)
+    if (authRes?.ok) {
+      const users: JellyfinUser[] = await authRes.json()
+      if (users.length > 0) return users
+    }
+
+    // Fall back to public endpoint
+    const publicRes = await fetch(`${baseUrl}/Users/Public`).catch(() => null)
+    if (publicRes?.ok) {
+      const users: JellyfinUser[] = await publicRes.json()
+      if (users.length > 0) return users
+    }
+
+    return []
+  }
+
+  const connectWithUser = async (url: string, apiKey: string, userId: string): Promise<void> => {
+    setJellyfinConfig({ url, apiKey, userId })
+    setUserId(userId)
+    setIsConnected(true)
+    await Promise.all([loadLibrary(url, apiKey, userId), loadStats(url, apiKey, userId)])
+  }
+
   // Connect to Jellyfin
   const connectToJellyfin = async (url: string, apiKey: string): Promise<boolean> => {
     setIsConnecting(true)
     setError(null)
-    
+
     try {
-      // Normalize URL - remove trailing slash
       const normalizedUrl = url.replace(/\/$/, '')
-      
-      // Test connection with proper headers
-      const response = await fetch(`${normalizedUrl}/System/Info/Public`, {
-        method: 'GET',
-        headers: { 
-          'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey,
-          'Content-Type': 'application/json'
-        }
-      })
-      
+      const headers = jellyfinHeaders(apiKey)
+
+      const response = await fetch(`${normalizedUrl}/System/Info/Public`, { method: 'GET', headers })
       if (!response.ok) {
         throw new Error(`Connection error: ${response.status} ${response.statusText}`)
       }
-      
-      const data = await response.json()
-      console.log('Connected to Jellyfin:', data.ServerName)
-      
-      // Try to get current user ID - default to admin user if API fails
-      let currentUserId = '23ea021636224deeb6d8b761c7703b79' // Default to admin user
-      try {
-        // Try /Users/Me endpoint
-        const userRes = await fetch(`${normalizedUrl}/Users/Me`, {
-          headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
-        })
-        
-        if (userRes.ok) {
-          const userData = await userRes.json()
-          currentUserId = userData.Id || currentUserId
-          // Success - use this user and continue
-          setJellyfinConfig({ url, apiKey, userId: currentUserId })
-          setUserId(currentUserId)
-          setIsConnected(true)
-          await loadLibrary(url, apiKey, currentUserId)
-          await loadStats(url, apiKey, currentUserId)
-          return true
-        } else if (userRes.status === 400 || userRes.status === 401) {
-          // /Users/Me doesn't work with API keys - fetch all users and let user choose
-          console.warn('/Users/Me failed with API key, fetching user list...')
-          let usersData: JellyfinUser[] | null = null
-          
-          try {
-            const usersRes = await fetch(`${normalizedUrl}/Users`, {
-              headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
-            })
-            
-            if (usersRes.ok) {
-              const json = await usersRes.json()
-              usersData = json
-              if (usersData) {
-                console.log('Users fetched from /Users endpoint:', usersData.length, usersData.map(u => u.Name))
-              }
-            } else {
-              console.error('/Users endpoint failed:', usersRes.status, usersRes.statusText)
-            }
-          } catch (e) {
-            console.error('Exception fetching /Users:', e)
-          }
-          
-          // Show selector if we got any users, otherwise try fallback
-          if (usersData && usersData.length >= 1) {
-            setUsers(usersData)
-            setPendingConfig({ url, apiKey })
-            setShowUserSelector(true)
-            console.log('Showing user selector (from /Users/Me 400 fallback)')
-            return false
-          } else {
-            // Try alternative endpoints or show error
-            console.warn('No users from /Users endpoint, trying alternative...')
-            // Try public users endpoint as last resort
-            try {
-              const publicUsersRes = await fetch(`${normalizedUrl}/Users/Public`)
-              if (publicUsersRes.ok) {
-                const publicUsersData: JellyfinUser[] = await publicUsersRes.json()
-                if (publicUsersData.length >= 1) {
-                  console.log('Public users fetched:', publicUsersData.length)
-                  setUsers(publicUsersData)
-                  setPendingConfig({ url, apiKey })
-                  setShowUserSelector(true)
-                  console.log('Showing user selector (from public endpoint)')
-                  return false
-                }
-              }
-            } catch (e) {
-              console.error('Public users endpoint also failed:', e)
-            }
-            
-            // If we still can't get users, use default admin
-            console.warn('Could not fetch any users, using default admin')
-            setJellyfinConfig({ url, apiKey, userId: currentUserId })
-            setUserId(currentUserId)
-            setIsConnected(true)
-            await loadLibrary(url, apiKey, currentUserId)
-            await loadStats(url, apiKey, currentUserId)
-            return true
-          }
-        } else {
-          // Show user selector as fallback
-          console.warn('/Users/Me failed with status', userRes.status, '- showing user selector')
-          try {
-            const usersRes = await fetch(`${normalizedUrl}/Users`, {
-              headers: { 'X-MediaBrowser-Token': apiKey, 'X-Emby-Token': apiKey }
-            })
-            if (usersRes.ok) {
-              const usersData: JellyfinUser[] = await usersRes.json()
-              console.log('Users fetched:', usersData.length, usersData.map(u => u.Name))
-              if (usersData.length > 0) {
-                setUsers(usersData)
-                setPendingConfig({ url, apiKey })
-                setShowUserSelector(true)
-                console.log('Showing user selector')
-                return false
-              }
-            }
-          } catch (e) {
-            console.error('Failed to fetch users:', e)
-          }
-        }
-      } catch (e) {
-        console.warn('User ID fetch failed:', e)
-        // Show user selector as last resort
-        setError('Could not identify user. Please select manually.')
+
+      // Try /Users/Me (works with session tokens, not always with API keys)
+      const userRes = await fetch(`${normalizedUrl}/Users/Me`, { headers }).catch(() => null)
+      if (userRes?.ok) {
+        const userData = await userRes.json()
+        await connectWithUser(normalizedUrl, apiKey, userData.Id)
+        return true
       }
-      
-      setIsConnecting(false)
+
+      // Fall back to user selector
+      const userList = await fetchUserList(normalizedUrl, apiKey)
+      if (userList.length > 0) {
+        setUsers(userList)
+        setPendingConfig({ url: normalizedUrl, apiKey })
+        setShowUserSelector(true)
+        return false
+      }
+
+      setError('Could not identify user. Please select manually.')
       return false
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Connection failed'
-      setError(errorMessage)
-      console.error('Connection error:', err)
+      setError(err instanceof Error ? err.message : 'Connection failed')
       return false
     } finally {
       setIsConnecting(false)
@@ -326,19 +252,11 @@ function App(): JSX.Element {
   // Handle user selection from the selector modal
   const handleUserSelect = async (selectedUser: JellyfinUser): Promise<void> => {
     if (!pendingConfig) return
-    
+
     const { url, apiKey } = pendingConfig
-    const currentUserId = selectedUser.Id
-    
-    setJellyfinConfig({ url, apiKey, userId: currentUserId })
-    setUserId(currentUserId)
     setShowUserSelector(false)
-    setIsConnected(true)
     setPendingConfig(null)
-    
-    // Load library data with selected user
-    await loadLibrary(url, apiKey, currentUserId)
-    await loadStats(url, apiKey, currentUserId)
+    await connectWithUser(url, apiKey, selectedUser.Id)
   }
 
   // Cancel user selection and go back to login
@@ -377,7 +295,6 @@ function App(): JSX.Element {
       
       if (statsRes.ok) {
         const statsData = await statsRes.json()
-        console.log('Library stats loaded:', statsData)
         setStats({
           ArtistCount: statsData.ArtistCount || 0,
           AlbumCount: statsData.AlbumCount || 0,
@@ -386,7 +303,6 @@ function App(): JSX.Element {
           ItemCount: statsData.ItemCount || 0
         })
       } else {
-        console.warn('/Items/Counts failed, status:', statsRes.status)
         // Fallback: we'll get counts from the first page of each list
         setStats(null)
       }
@@ -427,9 +343,7 @@ function App(): JSX.Element {
         const artistsItems = artistsData.Items || []
         setArtists(artistsItems)
         // Populate artist index (also update ref for immediate access)
-        console.log('[INDEX] Populating artist index with', artistsItems.length, 'artists')
         itemTypeIndexRef.current.artists = new Set([...itemTypeIndexRef.current.artists, ...artistsItems.map((a: Artist) => a.Id)])
-        console.log('[INDEX] Artist index now has', itemTypeIndexRef.current.artists.size, 'entries')
         setItemTypeIndex(prev => {
           const newSet = new Set(prev.artists)
           artistsItems.forEach((a: Artist) => newSet.add(a.Id))
@@ -450,12 +364,9 @@ function App(): JSX.Element {
         if (!albumsRes.ok) throw new Error(`HTTP ${albumsRes.status}`)
         const albumsData = await albumsRes.json()
         const albumsItems = albumsData.Items || []
-        console.log(`Loaded first page: ${albumsItems.length} albums`)
         setAlbums(albumsItems)
         // Populate album index (also update ref for immediate access)
-        console.log('[INDEX] Populating album index with', albumsItems.length, 'albums')
         itemTypeIndexRef.current.albums = new Set([...itemTypeIndexRef.current.albums, ...albumsItems.map((a: Album) => a.Id)])
-        console.log('[INDEX] Album index now has', itemTypeIndexRef.current.albums.size, 'entries')
         setItemTypeIndex(prev => {
           const newSet = new Set(prev.albums)
           albumsItems.forEach((a: Album) => newSet.add(a.Id))
@@ -478,13 +389,10 @@ function App(): JSX.Element {
         if (!itemsRes.ok) throw new Error(`HTTP ${itemsRes.status}`)
         const playlistsData = await itemsRes.json()
         const playlistsItems = playlistsData.Items || []
-        console.log('Playlists from /Items endpoint:', playlistsData.TotalRecordCount, 'items')
         
         setPlaylists(playlistsItems)
         // Populate playlist index (also update ref for immediate access)
-        console.log('[INDEX] Populating playlist index with', playlistsItems.length, 'playlists')
         itemTypeIndexRef.current.playlists = new Set([...itemTypeIndexRef.current.playlists, ...playlistsItems.map((p: Playlist) => p.Id)])
-        console.log('[INDEX] Playlist index now has', itemTypeIndexRef.current.playlists.size, 'entries')
         setItemTypeIndex(prev => {
           const newSet = new Set(prev.playlists)
           playlistsItems.forEach((p: Playlist) => newSet.add(p.Id))
@@ -514,23 +422,19 @@ function App(): JSX.Element {
   // Toggle track selection for sync
   const toggleTrackSelection = (id: string): void => {
     // DEBUG: Log what ID is being toggled
-    console.log('[DEBUG toggleTrackSelection] ID received:', id, 'Type:', typeof id)
     
     // Validate ID - skip undefined/null/empty IDs
     if (!id || typeof id !== 'string' || id.trim() === '') {
-      console.warn('[DEBUG toggleTrackSelection] Attempted to toggle invalid ID:', id)
       return
     }
     
     setSelectedTracks(prev => {
       const newSet = new Set(prev)
-      console.log('[DEBUG toggleTrackSelection] Current set size:', newSet.size, 'Adding ID:', id)
       if (newSet.has(id)) {
         newSet.delete(id)
       } else {
         newSet.add(id)
       }
-      console.log('[DEBUG toggleTrackSelection] New set size:', newSet.size)
       return newSet
     })
   }
@@ -576,14 +480,10 @@ function App(): JSX.Element {
 
   // Fetch tracks for sync from Jellyfin using index-based type detection
   const fetchTracksForSync = async (ids: string[]): Promise<Array<{id: string, name: string, path: string, format: string}>> => {
-    console.log('[DEBUG] fetchTracksForSync called with IDs:', ids)
     // Use ref for immediate access to latest index values
     const currentIndex = itemTypeIndexRef.current
-    console.log('[DEBUG] Using index ref - artists:', currentIndex.artists.size, 'albums:', currentIndex.albums.size, 'playlists:', currentIndex.playlists.size)
-    console.log('[DEBUG] State index - artists:', itemTypeIndex.artists.size, 'albums:', itemTypeIndex.albums.size, 'playlists:', itemTypeIndex.playlists.size)
     
     if (!jellyfinConfig || !userId) {
-      console.warn('[DEBUG] No jellyfinConfig or userId')
       return []
     }
     
@@ -592,7 +492,6 @@ function App(): JSX.Element {
     
     const headers = { 'X-MediaBrowser-Token': jellyfinConfig.apiKey, 'X-Emby-Token': jellyfinConfig.apiKey, 'Content-Type': 'application/json' }
     const baseUrl = jellyfinConfig.url.replace(/\/$/, '')
-    console.log('[DEBUG] Base URL:', baseUrl, 'UserId:', userId)
     
     const tracks: Array<{id: string, name: string, path: string, format: string}> = []
     const addedIds = new Set<string>()
@@ -616,16 +515,13 @@ function App(): JSX.Element {
       const inAlbumIndex = currentIndex.albums.has(id) || itemTypeIndex.albums.has(id)
       const inPlaylistIndex = currentIndex.playlists.has(id) || itemTypeIndex.playlists.has(id)
       
-      console.log(`[DEBUG] Checking index for ID ${id}: artist=${inArtistIndex}, album=${inAlbumIndex}, playlist=${inPlaylistIndex}`)
       
       if (inArtistIndex) {
         // ES ARTISTA → obtener álbumes y luego tracks
-        console.log('[DEBUG] Found in artist index, processing:', id)
         try {
           const artistRes = await fetch(`${baseUrl}/users/${userId}/items?AlbumArtistIds=${id}&includeItemTypes=MusicAlbum&Recursive=true&fields=Path`, { headers })
           if (artistRes.ok) {
             const albums = await artistRes.json()
-            console.log(`[DEBUG] Artist ${id}: found ${albums.Items?.length || 0} albums`)
             for (const album of albums.Items || []) {
               const tracksRes = await fetch(`${baseUrl}/users/${userId}/items?parentId=${album.Id}&includeItemTypes=Audio`, { headers })
               if (tracksRes.ok) {
@@ -634,37 +530,27 @@ function App(): JSX.Element {
               }
             }
           }
-        } catch (e) { console.warn('[DEBUG] Artist error:', e) }
       } else if (inAlbumIndex) {
         // ES ÁLBUM → obtener tracks directamente
-        console.log('[DEBUG] Found in album index, processing:', id)
         try {
           const albumRes = await fetch(`${baseUrl}/users/${userId}/items?parentId=${id}&includeItemTypes=Audio&recursive=true`, { headers })
           if (albumRes.ok) {
             const data = await albumRes.json()
-            console.log(`[DEBUG] Album ${id}: found ${data.Items?.length || 0} tracks`)
             for (const track of data.Items || []) addTrack(track)
           }
-        } catch (e) { console.warn('[DEBUG] Album error:', e) }
       } else if (inPlaylistIndex) {
         // ES PLAYLIST → obtener tracks de playlist
-        console.log('[DEBUG] Found in playlist index, processing:', id)
         try {
           const playlistRes = await fetch(`${baseUrl}/playlists/${id}/items`, { headers })
           if (playlistRes.ok) {
             const items = await playlistRes.json()
-            console.log(`[DEBUG] Playlist ${id}: found ${items.Items?.length || 0} items`)
             for (const item of items.Items || []) addTrack(item)
           }
-        } catch (e) { console.warn('[DEBUG] Playlist error:', e) }
       } else {
-        console.warn('[DEBUG] Unknown item type for ID:', id, '- not found in any index')
       }
       
-      console.log(`[DEBUG] After ${id}: total tracks = ${tracks.length}`)
     }
     
-    console.log('[DEBUG] Final track count:', tracks.length)
     return tracks
   }
 
@@ -702,7 +588,6 @@ function App(): JSX.Element {
       
       const selectedIds = [...artistIds, ...albumIds, ...playlistIds].filter(Boolean)
       
-      console.log('[DEBUG] Starting sync v2 with:', {
         itemIds: selectedIds,
         itemTypes: itemTypesMap,
         destination: syncFolder
@@ -722,7 +607,6 @@ function App(): JSX.Element {
         }
       })
       
-      console.log('[DEBUG] Sync v2 result:', result)
       
       setSyncProgress(null)
       setIsSyncing(false)
@@ -773,9 +657,7 @@ function App(): JSX.Element {
       const artistsItems = artistsData.Items || []
       setArtists(artistsItems)
       // Populate artist index (also update ref for immediate access)
-      console.log('[INDEX] Preloading artist index with', artistsItems.length, 'artists')
       itemTypeIndexRef.current.artists = new Set([...artistsItems.map((a: Artist) => a.Id)])
-      console.log('[INDEX] Preloaded artist index:', itemTypeIndexRef.current.artists.size, 'entries')
       setItemTypeIndex(prev => {
         const newSet = new Set(prev.artists)
         artistsItems.forEach((a: Artist) => newSet.add(a.Id))
@@ -803,12 +685,9 @@ function App(): JSX.Element {
       if (!albumsRes.ok) throw new Error(`HTTP ${albumsRes.status}`)
       const albumsData = await albumsRes.json()
       const albumsItems = albumsData.Items || []
-      console.log(`Preloaded first page: ${albumsItems.length} albums`)
       setAlbums(albumsItems)
       // Populate album index (also update ref for immediate access)
-      console.log('[INDEX] Preloading album index with', albumsItems.length, 'albums')
       itemTypeIndexRef.current.albums = new Set([...albumsItems.map((a: Album) => a.Id)])
-      console.log('[INDEX] Preloaded album index:', itemTypeIndexRef.current.albums.size, 'entries')
       setItemTypeIndex(prev => {
         const newSet = new Set(prev.albums)
         albumsItems.forEach((a: Album) => newSet.add(a.Id))
@@ -835,12 +714,9 @@ function App(): JSX.Element {
       if (!playlistsRes.ok) throw new Error(`HTTP ${playlistsRes.status}`)
       const playlistsData = await playlistsRes.json()
       const playlistsItems = playlistsData.Items || []
-      console.log(`Preloaded first page: ${playlistsItems.length} playlists`)
       setPlaylists(playlistsItems)
       // Populate playlist index (also update ref for immediate access)
-      console.log('[INDEX] Preloading playlist index with', playlistsItems.length, 'playlists')
       itemTypeIndexRef.current.playlists = new Set([...playlistsItems.map((p: Playlist) => p.Id)])
-      console.log('[INDEX] Preloaded playlist index:', itemTypeIndexRef.current.playlists.size, 'entries')
       setItemTypeIndex(prev => {
         const newSet = new Set(prev.playlists)
         playlistsItems.forEach((p: Playlist) => newSet.add(p.Id))
@@ -900,14 +776,12 @@ function App(): JSX.Element {
       const data = await res.json()
       const newItems: Array<Artist | Album | Playlist> = data.Items || []
       
-      console.log(`Loaded more ${type}: ${newItems.length} items (startIndex: ${startIndex})`)
       
       // Deduplicate new items against existing ones to avoid duplicates
       const existingIds = new Set(currentPagination.items.map(item => item.Id))
       const uniqueNewItems = newItems.filter(item => !existingIds.has(item.Id))
       
       if (uniqueNewItems.length < newItems.length) {
-        console.warn(`Filtered out ${newItems.length - uniqueNewItems.length} duplicate items`)
       }
       
       // Update state - only update pagination (useEffect will sync to main state)

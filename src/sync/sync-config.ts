@@ -309,6 +309,7 @@ export function createSyncConfig(input: {
  * @param serverRootPath - Server root to strip (e.g., "/mediamusic/lib/lib/")
  * @param destinationRoot - Local destination root (e.g., "/Volumes/MEDIA/lib")
  * @returns Full destination path (e.g., "/Volumes/MEDIA/lib/Ace/Five-A-Side/Ace - Five-A-Side - How Long.mp3")
+ * @throws Error if the resulting path would escape the destination root (path traversal attempt)
  */
 export function buildDestinationPath(
   serverPath: string,
@@ -316,9 +317,14 @@ export function buildDestinationPath(
   destinationRoot: string
 ): string {
   // Remove server root to get relative path
-  const relativePath = serverPath.replace(serverRootPath, '');
+  const relativePath = serverPath.replace(serverRootPath, '').replace(/\/+/g, '/');
   
-  // Join with destination root
+  // Validate for path traversal attempts (only check for .. after normalization)
+  if (relativePath.includes('..')) {
+    throw new Error(`Invalid path: path traversal attempt detected in "${relativePath}"`);
+  }
+  
+  // Join with destination root (normalize to remove duplicate slashes)
   return `${destinationRoot}/${relativePath}`.replace(/\/+/g, '/');
 }
 

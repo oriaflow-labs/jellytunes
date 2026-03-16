@@ -54,6 +54,27 @@ import {
 } from './sync-progress';
 
 /**
+ * Validate that a path stays within allowed boundaries (prevent path traversal)
+ */
+function validatePathTraversal(basePath: string, relativePath: string): void {
+  // Check for path traversal attempts (only .. should be blocked)
+  // Note: paths may contain consecutive slashes, so we normalize first
+  const normalizedPath = relativePath.replace(/\/+/g, '/');
+  
+  if (normalizedPath.includes('..')) {
+    throw new Error(`Path traversal attempt detected: "${relativePath}" would escape "${basePath}"`);
+  }
+  
+  // Normalize and verify the final path is still within base
+  const normalizedBase = basePath.replace(/\/+$/, '');
+  const normalizedFull = `${normalizedBase}/${normalizedPath}`.replace(/\/+/g, '/');
+  
+  if (!normalizedFull.startsWith(normalizedBase + '/') && normalizedFull !== normalizedBase) {
+    throw new Error(`Path traversal attempt detected: final path "${normalizedFull}" escapes base "${basePath}"`);
+  }
+}
+
+/**
  * Dependencies container (for dependency injection)
  */
 export interface SyncDependencies {
@@ -330,68 +351,44 @@ class SyncCoreImpl {
   // Private helpers
   
   /**
-   * Get output directory path
-   * Uses server root mapping if configured, otherwise falls back to preserving original path structure
+   * Get output directory path.
+   * Preserves original server path structure when available; falls back to metadata.
    */
   private getOutputDir(
-    track: {path: string; artists?: string[]; album?: string; year?: number},
+    track: { path: string; artists?: string[]; album?: string; year?: number },
     basePath: string,
     preserveStructure: boolean
   ): string {
-    // If server root path is configured (or auto-detected), use original server path structure
-    if (this.serverRootPath && track.path) {
-      const relativePath = getRelativePath(track.path, this.serverRootPath);
-      // Extract directory part from relative path
-      const pathParts = relativePath.split('/');
-      if (pathParts.length > 1) {
-        // Remove filename, keep directory structure
-        pathParts.pop();
-        const dirRelative = pathParts.join('/');
-        return `${basePath}/${dirRelative}`;
+    const serverRelativePath = this.serverRootPath
+      ? getRelativePath(track.path, this.serverRootPath)
+      : preserveStructure && track.path
+        ? track.path
+        : null;
+
+    if (serverRelativePath) {
+      validatePathTraversal(basePath, serverRelativePath);
+      const parts = serverRelativePath.split('/');
+      if (parts.length > 1) {
+        parts.pop(); // remove filename
+        return `${basePath}/${parts.join('/')}`;
       }
-      // Only filename, use base path
       return basePath;
     }
-    
-    // No serverRootPath: preserve original path structure from server
-    // This ensures we don't lose the folder hierarchy even without explicit mapping
-    if (track.path && preserveStructure) {
-      // Extract directory from original path
-      const pathParts = track.path.split('/');
-      if (pathParts.length > 1) {
-        // Remove filename, keep directory structure
-        pathParts.pop();
-        const dirRelative = pathParts.join('/');
-        // Combine with destination base but preserve server structure
-        return `${basePath}/${dirRelative}`;
-      }
-    }
-    
-    // Fallback: reconstruct from metadata only if preserveStructure is false
-    // or if we have no path to work with
-    if (!preserveStructure || !track.path) {
-      return basePath;
-    }
-    
+
+    // Metadata fallback when no path available
     const parts = [basePath, 'lib'];
-    
-    if (track.artists && track.artists.length > 0) {
-      parts.push(this.sanitize(track.artists[0]));
+
+    if (track.artists?.[0]) {
+      parts.push(track.artists[0].replace(/[<>:"/\\|?*]/g, '_').slice(0, 100));
     }
-    
+
     if (track.album) {
-      let albumFolder = this.sanitize(track.album);
-      if (track.year) {
-        albumFolder += ` (${track.year})`;
-      }
-      parts.push(albumFolder);
+      let folder = track.album.replace(/[<>:"/\\|?*]/g, '_').slice(0, 100);
+      if (track.year) folder += ` (${track.year})`;
+      parts.push(folder);
     }
-    
+
     return parts.join('/');
-  }
-  
-  private sanitize(name: string): string {
-    return name.replace(/[<>:"/\\|?*]/g, '_').slice(0, 100);
   }
   
   /**
@@ -403,50 +400,49 @@ class SyncCoreImpl {
     outputDir: string,
     options: ReturnType<typeof resolveSyncOptions>
   ): Promise<string> {
-    // If server root path is configured (or auto-detected), use original filename from server path
-    if (this.serverRootPath && track.path) {
-      const extension = options.convertToMp3 ? 'mp3' : track.format.toLowerCase();
-      const originalFilename = getFilenameFromPath(track.path);
-      
-      // Replace extension if converting to mp3
-      let filename = originalFilename;
-      if (options.convertToMp3 && !originalFilename.toLowerCase().endsWith('.mp3')) {
-        filename = originalFilename.replace(/\.[^.]+$/, `.${extension}`);
-      }
-      
-      return getUniqueFilename(outputDir, filename, this.deps.fs);
-    }
-    
-    // No serverRootPath: preserve original filename from server path
     if (track.path) {
-      const extension = options.convertToMp3 ? 'mp3' : track.format.toLowerCase();
-      const originalFilename = getFilenameFromPath(track.path);
-      
-      // Replace extension if converting to mp3
-      let filename = originalFilename;
-      if (options.convertToMp3 && !originalFilename.toLowerCase().endsWith('.mp3')) {
-        filename = originalFilename.replace(/\.[^.]+$/, `.${extension}`);
-      }
-      
+      const filename = this.resolveFilenameFromPath(track, options);
       return getUniqueFilename(outputDir, filename, this.deps.fs);
     }
-    
-    // Fallback: reconstruct from metadata only if we have no path
+
+    // Fallback: reconstruct from metadata when no server path is available
+    const filename = this.buildFilenameFromMetadata(track, options);
+    return getUniqueFilename(outputDir, filename, this.deps.fs);
+  }
+
+  private resolveFilenameFromPath(
+    track: { path: string; format: string },
+    options: ReturnType<typeof resolveSyncOptions>
+  ): string {
+    let filename = getFilenameFromPath(track.path);
+
+    filename = filename.replace(/[<>:"|?*]/g, '_');
+    if (filename.includes('..') || filename.startsWith('.') || filename.endsWith(' ')) {
+      throw new Error(`Invalid filename: suspicious characters detected in "${filename}"`);
+    }
+
+    if (options.convertToMp3 && !filename.toLowerCase().endsWith('.mp3')) {
+      filename = filename.replace(/\.[^.]+$/, '.mp3');
+    }
+
+    return filename;
+  }
+
+  private buildFilenameFromMetadata(
+    track: { name: string; format: string; trackNumber?: number; artists?: string[]; album?: string },
+    options: ReturnType<typeof resolveSyncOptions>
+  ): string {
     const extension = options.convertToMp3 ? 'mp3' : track.format.toLowerCase();
     const baseName = track.name.replace(/[<>:"/\\|?*]/g, '_');
     const artistName = track.artists?.[0]?.replace(/[<>:"/\\|?*]/g, '_') ?? 'Unknown Artist';
     const albumName = track.album?.replace(/[<>:"/\\|?*]/g, '_') ?? 'Unknown Album';
-    
-    let filename: string;
+
     if (track.trackNumber && options.preserveStructure) {
-      // Format: Artista - Álbum - Nº - Título.ext
       const trackNum = String(track.trackNumber).padStart(2, '0');
-      filename = `${artistName} - ${albumName} - ${trackNum} - ${baseName}.${extension}`;
-    } else {
-      filename = `${baseName}.${extension}`;
+      return `${artistName} - ${albumName} - ${trackNum} - ${baseName}.${extension}`;
     }
-    
-    return getUniqueFilename(outputDir, filename, this.deps.fs);
+
+    return `${baseName}.${extension}`;
   }
   
   private needsConversion(format: string): boolean {
@@ -459,12 +455,30 @@ class SyncCoreImpl {
     outputPath: string,
     bitrate: '128k' | '192k' | '320k'
   ): Promise<void> {
-    const tempPath = `/tmp/jellysync_${Date.now()}_${track.name.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
+    const timestamp = Date.now();
+    const safeName = track.name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50);
+    const tempPath = `/tmp/jellysync_${timestamp}_${safeName}.mp3`;
+    const sourcePath = `/tmp/jellysync_src_${timestamp}.tmp`;
+    
+    // Track temp files for cleanup
+    const tempFiles: string[] = [tempPath, sourcePath];
+    
+    const cleanup = async (): Promise<void> => {
+      for (const file of tempFiles) {
+        try {
+          if (await this.deps.fs.exists(file)) {
+            await this.deps.fs.unlink(file);
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      tempFiles.length = 0;
+    };
     
     try {
       // Download from Jellyfin server first
       const data = await this.deps.api.downloadItem(track.id);
-      const sourcePath = `/tmp/jellysync_src_${Date.now()}.tmp`;
       await this.deps.fs.writeFile(sourcePath, data);
       
       // Now convert the downloaded file
@@ -480,24 +494,11 @@ class SyncCoreImpl {
       
       await this.deps.fs.copyFile(tempPath, outputPath);
       
-      // Clean up temp files
-      try {
-        await this.deps.fs.unlink(sourcePath);
-      } catch {
-        // Ignore cleanup errors
-      }
-      try {
-        await this.deps.fs.unlink(tempPath);
-      } catch {
-        // Ignore cleanup errors
-      }
+      // Clean up temp files on success
+      await cleanup();
     } catch (error) {
-      // Clean up temp file on error
-      try {
-        await this.deps.fs.unlink(tempPath);
-      } catch {
-        // Ignore cleanup errors
-      }
+      // Clean up temp files on error (critical to prevent memory leak)
+      await cleanup();
       throw error;
     }
   }
