@@ -35,7 +35,7 @@ export function Sidebar({
   onRefreshDevices,
 }: SidebarProps): JSX.Element {
   const tabClass = (active: boolean) =>
-    `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${active ? 'bg-jf-purple text-white' : 'hover:bg-zinc-800 text-zinc-300'}`
+    `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${active ? 'bg-jf-purple/20 text-jf-purple-light border border-jf-purple/40' : 'hover:bg-zinc-800 text-zinc-300 border border-transparent'}`
 
   const destClass = (path: string) =>
     `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${activeDestinationPath === path ? 'bg-jf-purple/20 text-jf-purple-light border border-jf-purple/40' : 'hover:bg-zinc-800 text-zinc-300 border border-transparent'}`
