@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Does
 
-Jellysync is an Electron + React desktop app that syncs music libraries from a Jellyfin media server to portable devices (USB drives, SD cards). It handles selective sync, format conversion (FLAC→MP3 via FFmpeg), and preserves the server's folder structure on the destination device.
+JellyTunes is an Electron + React desktop app that syncs music libraries from a Jellyfin media server to portable devices (USB drives, SD cards). It handles selective sync, format conversion (FLAC→MP3 via FFmpeg), and preserves the server's folder structure on the destination device.
 
 ## Commands
 

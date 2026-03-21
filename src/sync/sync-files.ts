@@ -246,7 +246,7 @@ export function createFFmpegConverter(): AudioConverter {
     const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
     ffmpegPath = ffmpegInstaller.path;
   } catch {
-    ffmpegPath = 'ffmpeg';
+    ffmpegPath = 'ffmpeg'; // bundled binary not available, using system ffmpeg
   }
   
   return {

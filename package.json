@@ -1,9 +1,9 @@
 {
-  "name": "jellysync",
+  "name": "jellytunes",
   "version": "0.2.0",
   "description": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC",
   "main": "dist/main/index.js",
-  "author": "Jellysync Team",
+  "author": "JellyTunes Team",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite build && electron-vite dev",
@@ -20,12 +20,12 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test": "pnpm run test:unit",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "build-icon": "node scripts/build-icon.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "better-sqlite3": "^12.8.0",
     "electron-log": "^5.2.4",
     "fluent-ffmpeg": "^2.1.3",
@@ -34,6 +34,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@cucumber/cucumber": "^10.0.1",
     "@cucumber/pretty-formatter": "^1.0.1",
     "@electron/rebuild": "^4.0.3",
@@ -54,6 +55,7 @@
     "jsdom": "^28.1.0",
     "playwright": "^1.40.1",
     "postcss": "^8.4.49",
+    "sharp": "^0.34.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
@@ -63,20 +65,29 @@
     "vitest": "^2.1.8"
   },
   "build": {
-    "appId": "com.jellysync.app",
-    "productName": "Jellysync",
+    "appId": "com.jellytunes.app",
+    "productName": "JellyTunes",
     "directories": {
       "output": "release"
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "!**/node_modules/better-sqlite3/deps/**",
+      "!**/node_modules/better-sqlite3/src/**",
+      "!**/node_modules/better-sqlite3/gyp/**",
+      "!**/node_modules/better-sqlite3/**/*.c",
+      "!**/node_modules/better-sqlite3/**/*.h"
+    ],
+    "asarUnpack": [
+      "**/better-sqlite3/build/Release/*.node"
     ],
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "compression": "maximum"
     },
     "win": {
       "target": [

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { JellyfinConfig, JellyfinUser } from '../appTypes'
 import { jellyfinHeaders } from '../utils/jellyfin'
 
-const SESSION_KEY = 'jellysync-session'
+const SESSION_KEY = 'jellytunes-session'
 
 interface ConnectionState {
   jellyfinConfig: JellyfinConfig | null

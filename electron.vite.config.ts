@@ -4,10 +4,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist/main',
       rollupOptions: {
+        external: ['electron', 'better-sqlite3'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts')
         }

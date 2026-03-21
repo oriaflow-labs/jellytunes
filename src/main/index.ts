@@ -12,7 +12,7 @@ import { createSyncCore, createValidatedConfig, validateDestination, createNodeF
 import { initDatabase, recordSyncCompleted, getSyncedItemIds, getDeviceSyncInfo, getRecentSyncHistory, removeSyncedItems } from './database'
 
 log.transports.file.level = 'info'
-log.info('Jellysync starting...')
+log.info('JellyTunes starting...')
 
 let mainWindow: BrowserWindow | null = null
 
@@ -408,7 +408,7 @@ ipcMain.handle('sync:start', async (event, options) => {
 // New sync:start2 handler - uses SyncCore for proper path resolution
 ipcMain.handle('sync:start2', async (event, options) => {
   try {
-    const { serverUrl, apiKey, userId, itemIds, itemTypes, destinationPath, ...syncOptions } = options
+    const { serverUrl, apiKey, userId, itemIds, itemTypes, destinationPath, options: syncOptions = {} } = options
     log.info(`Starting sync v2 to ${destinationPath} with ${itemIds.length} items`)
     
     // Validate inputs
@@ -552,7 +552,7 @@ ipcMain.handle('sync:removeItems', async (_event, options: {
 app.whenReady().then(() => {
   log.info('App ready')
   initDatabase()
-  electronApp.setAppUserModelId('com.jellysync.app')
+  electronApp.setAppUserModelId('com.jellytunes.app')
   app.on('browser-window-created', (_, window) => { optimizer.watchWindowShortcuts(window) })
   createWindow()
   app.on('activate', function () { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

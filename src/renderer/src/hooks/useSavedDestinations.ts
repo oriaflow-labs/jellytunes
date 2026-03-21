@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { SavedDestination } from '../appTypes'
 
-const STORAGE_KEY = 'jellysync_destinations'
+const STORAGE_KEY = 'jellytunes_destinations'
 
 function load(): SavedDestination[] {
   try {

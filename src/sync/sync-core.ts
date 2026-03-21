@@ -225,7 +225,7 @@ class SyncCoreImpl {
           const outputDir = this.getOutputDir(track, input.destinationPath, options.preserveStructure ?? true, options.filesystemType ?? 'unknown');
           await ensureDirectory(outputDir, this.deps.fs);
           
-          const willConvert = options.convertToMp3 && this.needsConversion(track.format);
+          const willConvert = options.convertToMp3 === true;
 
           // Resolve the canonical filename (no uniqueness suffix yet)
           const outputFilename = this.resolveCanonicalFilename(track, options);
@@ -604,11 +604,6 @@ class SyncCoreImpl {
     return `${baseName}.${extension}`;
   }
   
-  private needsConversion(format: string): boolean {
-    const convertible = ['flac', 'wav', 'm4a', 'aac', 'ogg'];
-    return convertible.includes(format.toLowerCase());
-  }
-  
   /**
    * Generate M3U8 playlist files in the destination root.
    * Each file uses relative paths to audio files under lib/.
@@ -696,8 +691,8 @@ class SyncCoreImpl {
   ): Promise<void> {
     const timestamp = Date.now();
     const safeName = track.name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50);
-    const tempPath = `/tmp/jellysync_${timestamp}_${safeName}.mp3`;
-    const sourcePath = `/tmp/jellysync_src_${timestamp}.tmp`;
+    const tempPath = `/tmp/jellytunes_${timestamp}_${safeName}.mp3`;
+    const sourcePath = `/tmp/jellytunes_src_${timestamp}.tmp`;
     
     // Track temp files for cleanup
     const tempFiles: string[] = [tempPath, sourcePath];

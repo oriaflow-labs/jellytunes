@@ -1,5 +1,5 @@
 /**
- * SQLite database module for Jellysync
+ * SQLite database module for JellyTunes
  *
  * Tracks sync history and synced files per device.
  * Used for smart sync (show what's new vs. already synced) and history view.
@@ -36,7 +36,7 @@ export interface DeviceSyncInfo {
 export function initDatabase(): void {
   if (db) return
 
-  const dbPath = path.join(app.getPath('userData'), 'jellysync.db')
+  const dbPath = path.join(app.getPath('userData'), 'jellytunes.db')
   log.info(`Database: ${dbPath}`)
 
   db = new Database(dbPath)

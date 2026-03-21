@@ -16,7 +16,7 @@ export function LoginScreen({ urlInput, apiKeyInput, error, onUrlChange, onApiKe
       <div className="w-full max-w-md p-8">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <GradientMusicIcon className="w-10 h-10" />
-          <h1 className="text-2xl font-bold">Jellysync</h1>
+          <h1 className="text-2xl font-bold">JellyTunes</h1>
         </div>
 
         <div className="bg-jf-bg-mid rounded-xl p-6 border border-jf-border">
