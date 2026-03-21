@@ -203,7 +203,7 @@ export function DeviceSyncPanel({
               <p className="text-xs mt-1 text-zinc-600">Select artists, albums or playlists from the library</p>
             </div>
           ) : (
-            <div className="divide-y divide-zinc-800">
+            <div className="divide-y divide-zinc-800 max-h-60 overflow-y-auto">
               {groups.map(([state, label]) => {
                 const items = syncItems.filter(i => i.state === state)
                 if (items.length === 0) return null

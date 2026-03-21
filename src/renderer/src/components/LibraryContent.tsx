@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Loader2, X, HardDrive, Folder, Search } from 'lucide-react'
 import { LibraryItem } from './LibraryItem'
 import type { LibraryTab, Artist, Album, Playlist, PaginationState } from '../appTypes'
@@ -67,20 +67,31 @@ export function LibraryContent({
 }: LibraryContentProps): JSX.Element {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const [syncFilter, setSyncFilter] = useState<SyncFilter>('all')
+  const [noDeviceHint, setNoDeviceHint] = useState(false)
 
   const isSearchActive = searchQuery.length >= 2
 
-  // Intersection observer for infinite scroll — wired to local sentinel
+  // Intersection observer — disabled when search active or sync filter applied (client-side filter
+  // reduces visible rows, sentinel would immediately trigger cascade loads)
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!sentinel || isSearchActive) return
+    if (!sentinel || isSearchActive || syncFilter !== 'all') return
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting && !isLoadingMore) onLoadMore(activeLibrary) },
       { threshold: 0.1 }
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [activeLibrary, isLoadingMore, isSearchActive, onLoadMore])
+  }, [activeLibrary, isLoadingMore, isSearchActive, syncFilter, onLoadMore])
+
+  const handleToggle = useCallback((id: string) => {
+    if (!activeDeviceName) {
+      setNoDeviceHint(true)
+      setTimeout(() => setNoDeviceHint(false), 2500)
+      return
+    }
+    onToggle(id)
+  }, [activeDeviceName, onToggle])
 
   const applySyncFilter = <T extends { Id: string }>(items: T[]) => {
     if (syncFilter === 'synced') return items.filter(i => previouslySyncedItems.has(i.Id))
@@ -101,7 +112,14 @@ export function LibraryContent({
     <main className="flex-1 flex flex-col overflow-hidden">
 
       {/* ── Sticky header ─────────────────────────────────── */}
-      <div className="flex-shrink-0 border-b border-jf-border">
+      <div className="flex-shrink-0 border-b border-jf-border relative">
+
+        {/* No-device hint toast */}
+        {noDeviceHint && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-jf-bg-mid border border-jf-purple/40 rounded-lg text-sm text-jf-purple-light shadow-lg animate-pulse pointer-events-none">
+            Select a device in the sidebar first
+          </div>
+        )}
 
         {/* Device context banner */}
         {activeDeviceName && (
@@ -164,7 +182,7 @@ export function LibraryContent({
             </span>
             <div className="flex gap-3">
               {!isSearchActive && (
-                <button onClick={onSelectAll} className="text-xs text-jf-purple hover:text-jf-purple-light">
+                <button onClick={activeDeviceName ? onSelectAll : () => { setNoDeviceHint(true); setTimeout(() => setNoDeviceHint(false), 2500) }} className="text-xs text-jf-purple hover:text-jf-purple-light">
                   Select all
                 </button>
               )}
@@ -208,7 +226,7 @@ export function LibraryContent({
                 type="artist"
                 isSelected={selectedTracks.has(artist.Id)}
                 wasSynced={previouslySyncedItems.has(artist.Id)}
-                onToggle={onToggle}
+                onToggle={handleToggle}
                 serverUrl={serverUrl}
               />
             ))}
@@ -220,7 +238,7 @@ export function LibraryContent({
                 type="album"
                 isSelected={selectedTracks.has(album.Id)}
                 wasSynced={previouslySyncedItems.has(album.Id)}
-                onToggle={onToggle}
+                onToggle={handleToggle}
                 serverUrl={serverUrl}
               />
             ))}
@@ -232,7 +250,7 @@ export function LibraryContent({
                 type="playlist"
                 isSelected={selectedTracks.has(playlist.Id)}
                 wasSynced={previouslySyncedItems.has(playlist.Id)}
-                onToggle={onToggle}
+                onToggle={handleToggle}
                 serverUrl={serverUrl}
               />
             ))}

@@ -1,4 +1,5 @@
-import { Music, Check, LogOut } from 'lucide-react'
+import { Check, LogOut } from 'lucide-react'
+import { GradientMusicIcon } from './GradientMusicIcon'
 
 interface AppHeaderProps {
   isConnected: boolean
@@ -12,7 +13,7 @@ export function AppHeader({ isConnected, serverUrl, onDisconnect }: AppHeaderPro
   return (
     <header className="h-14 border-b border-jf-border flex items-center justify-between px-4">
       <div className="flex items-center gap-2">
-        <Music className="w-6 h-6 text-jf-purple" />
+        <GradientMusicIcon className="w-6 h-6" />
         <h1 className="text-lg font-semibold">Jellysync</h1>
         {isConnected && (
           <span className="text-xs text-jf-cyan flex items-center gap-1">

@@ -1,4 +1,5 @@
-import { Music, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { GradientMusicIcon } from './GradientMusicIcon'
 
 interface LoginScreenProps {
   urlInput: string
@@ -14,7 +15,7 @@ export function LoginScreen({ urlInput, apiKeyInput, error, onUrlChange, onApiKe
     <div data-testid="auth-screen" className="h-screen flex items-center justify-center bg-jf-bg-dark text-zinc-100">
       <div className="w-full max-w-md p-8">
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <Music className="w-10 h-10 text-jf-purple" />
+          <GradientMusicIcon className="w-10 h-10" />
           <h1 className="text-2xl font-bold">Jellysync</h1>
         </div>
 
