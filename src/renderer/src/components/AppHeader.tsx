@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, LogOut } from 'lucide-react'
+import { Check, Info, LogOut } from 'lucide-react'
 import { GradientMusicIcon } from './GradientMusicIcon'
 import { AboutModal } from './AboutModal'
 
@@ -28,10 +28,10 @@ export function AppHeader({ isConnected, serverUrl, onDisconnect }: AppHeaderPro
         <button
           data-testid="about-button"
           onClick={() => setShowAbout(true)}
-          title="About JellyTunes"
-          className="flex items-center justify-center w-7 h-7 text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
         >
-          ⓘ
+          <Info className="w-4 h-4" />
+          About
         </button>
         {isConnected && (
           <button
