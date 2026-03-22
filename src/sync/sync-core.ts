@@ -14,6 +14,7 @@ import type {
   SizeEstimate,
   ItemType,
   DestinationValidation,
+  SyncLogger,
 } from './types';
 
 import {
@@ -73,13 +74,17 @@ function validatePathTraversal(basePath: string, relativePath: string): void {
   }
 }
 
+/** No-op logger used when no logger is injected (keeps module testable) */
+const noopLogger: SyncLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+
 /**
- * Dependencies container (for dependency injection)
+ * Dependencies container (for dependency injection).
  */
 export interface SyncDependencies {
   api: SyncApi;
   fs: FileSystem;
   converter: AudioConverter;
+  logger?: SyncLogger;
 }
 
 /**
@@ -103,19 +108,27 @@ function createDefaultDependencies(config: SyncConfig): SyncDependencies {
 class SyncCoreImpl {
   private config: SyncConfig;
   private deps: SyncDependencies;
+  private log: SyncLogger;
   private progressEmitter: ProgressEmitter;
   private cancellation: CancellationController;
   private serverRootPath: string;
-  
-  constructor(config: SyncConfig, deps?: SyncDependencies) {
+
+  constructor(config: SyncConfig, deps?: Partial<SyncDependencies>) {
     // Validate config
     const validation = validateSyncConfig(config);
     if (!validation.valid) {
       throw new Error(`Invalid config: ${validation.errors.join(', ')}`);
     }
-    
+
     this.config = config;
-    this.deps = deps ?? createDefaultDependencies(config);
+    const defaults = createDefaultDependencies(config);
+    this.deps = {
+      api: deps?.api ?? defaults.api,
+      fs: deps?.fs ?? defaults.fs,
+      converter: deps?.converter ?? defaults.converter,
+      logger: deps?.logger,
+    };
+    this.log = this.deps.logger ?? noopLogger;
     this.progressEmitter = createProgressEmitter();
     this.cancellation = createCancellationController();
     // Default server root path if not provided
@@ -188,6 +201,7 @@ class SyncCoreImpl {
         const detectedPath = detectServerRootPath(tracks);
         if (detectedPath) {
           this.serverRootPath = detectedPath;
+          this.log.info(`Detected server root path: ${detectedPath}`);
         }
       }
       
@@ -224,7 +238,7 @@ class SyncCoreImpl {
         try {
           const outputDir = this.getOutputDir(track, input.destinationPath, options.preserveStructure ?? true, options.filesystemType ?? 'unknown');
           await ensureDirectory(outputDir, this.deps.fs);
-          
+
           const willConvert = options.convertToMp3 === true;
 
           // Resolve the canonical filename (no uniqueness suffix yet)
@@ -236,14 +250,17 @@ class SyncCoreImpl {
             if (willConvert) {
               // Cross-format: can't compare sizes meaningfully, skip if present
               stats.itemsSkipped++;
+              this.log.debug(`Skip (convert, exists): ${track.name}`);
               continue;
             }
             if (track.size && (await this.deps.fs.stat(outputPath)).size === track.size) {
               // Same size → unchanged, skip
               stats.itemsSkipped++;
+              this.log.debug(`Skip (same size): ${track.name}`);
               continue;
             }
             // Size differs → fall through and overwrite
+            this.log.debug(`Overwrite (size changed): ${track.name}`);
           }
 
           // Remove alternate-format copies of the same track (e.g. .flac when writing .mp3)
@@ -262,12 +279,13 @@ class SyncCoreImpl {
           }
 
           stats.itemsProcessed++;
-          
+
         } catch (error) {
           const errorMsg = `Failed to sync "${track.name}": ${error instanceof Error ? error.message : 'Unknown error'}`;
           errors.push(errorMsg);
           tracksFailed.push(track.id);
           stats.itemsFailed++;
+          this.log.warn(errorMsg);
         }
       }
       
@@ -655,8 +673,9 @@ class SyncCoreImpl {
         }
 
         await this.deps.fs.writeFile(m3u8Path, Buffer.from(lines.join('\n') + '\n', 'utf8'));
-      } catch {
-        // M3U8 generation is non-fatal
+        this.log.info(`M3U8 written: ${safeName}.m3u8 (${lines.length - 1} tracks)`);
+      } catch (error) {
+        this.log.warn(`M3U8 generation failed for playlist ${playlistId}: ${error instanceof Error ? error.message : 'unknown error'}`);
       }
     }
   }
@@ -762,7 +781,7 @@ class SyncCoreImpl {
 /**
  * Create SyncCore instance
  */
-export function createSyncCore(config: SyncConfig, deps?: SyncDependencies): SyncCore {
+export function createSyncCore(config: SyncConfig, deps?: Partial<SyncDependencies>): SyncCore {
   const core = new SyncCoreImpl(config, deps);
 
   return {

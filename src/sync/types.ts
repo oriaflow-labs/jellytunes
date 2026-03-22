@@ -243,6 +243,21 @@ export interface JellyfinPlaylistItem {
   ChildCount?: number;
 }
 
+// =============================================================================
+// LOGGING
+// =============================================================================
+
+/**
+ * Minimal logger interface for the sync module.
+ * Injected as an optional dependency so the module stays testable without electron-log.
+ */
+export interface SyncLogger {
+  info:  (msg: string) => void
+  warn:  (msg: string) => void
+  error: (msg: string) => void
+  debug: (msg: string) => void
+}
+
 /**
  * Fetch result for tracks from various item types
  * @internal

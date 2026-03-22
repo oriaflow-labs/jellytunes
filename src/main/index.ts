@@ -548,12 +548,22 @@ ipcMain.handle('sync:start2', async (event, options) => {
     }
     
     // Create SyncCore instance with proper configuration
-    const syncCore = createSyncCore({
-      serverUrl: serverUrl.replace(/\/$/, ''),
-      apiKey,
-      userId,
-      // serverRootPath will be auto-detected from tracks during sync
-    })
+    const syncCore = createSyncCore(
+      {
+        serverUrl: serverUrl.replace(/\/$/, ''),
+        apiKey,
+        userId,
+        // serverRootPath will be auto-detected from tracks during sync
+      },
+      {
+        logger: {
+          info:  (msg) => log.info('[sync]', msg),
+          warn:  (msg) => log.warn('[sync]', msg),
+          error: (msg) => log.error('[sync]', msg),
+          debug: (msg) => log.debug('[sync]', msg),
+        },
+      }
+    )
 
     // Convert itemTypes to Map if needed
     const itemTypesMap = itemTypes instanceof Map ? itemTypes : new Map(Object.entries(itemTypes))
@@ -670,7 +680,10 @@ ipcMain.handle('sync:removeItems', async (_event, options: {
   try {
     const { serverUrl, apiKey, userId, itemIds, itemTypes, destinationPath } = options
     log.info(`Removing ${itemIds.length} items from ${destinationPath}`)
-    const core = createSyncCore({ serverUrl: serverUrl.replace(/\/$/, ''), apiKey, userId })
+    const core = createSyncCore(
+      { serverUrl: serverUrl.replace(/\/$/, ''), apiKey, userId },
+      { logger: { info: (m) => log.info('[sync]', m), warn: (m) => log.warn('[sync]', m), error: (m) => log.error('[sync]', m), debug: (m) => log.debug('[sync]', m) } }
+    )
     const itemTypesMap = new Map(Object.entries(itemTypes)) as Map<string, 'artist' | 'album' | 'playlist'>
     const result = await core.removeItems(itemIds, itemTypesMap, destinationPath)
     log.info(`Removed ${result.removed} tracks, ${result.errors.length} errors`)
