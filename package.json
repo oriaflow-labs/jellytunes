@@ -87,14 +87,7 @@
       "**/better-sqlite3/build/Release/*.node"
     ],
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "universal"
-          ]
-        }
-      ],
+      "target": ["dmg"],
       "icon": "assets/icon.icns",
       "compression": "maximum",
       "identity": null
