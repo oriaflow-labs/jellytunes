@@ -38,9 +38,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Rebuild native modules
-        run: pnpm exec electron-rebuild -f -w better-sqlite3
-
       - name: Build and package
         run: pnpm run build && pnpm exec electron-builder --${{ matrix.platform }} --publish never
 

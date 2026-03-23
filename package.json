@@ -21,7 +21,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test": "pnpm run test:unit",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-builder install-app-deps",
     "build-icon": "node scripts/build-icon.mjs",
     "release": "bash scripts/release.sh"
   },
