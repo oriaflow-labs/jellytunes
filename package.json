@@ -83,27 +83,19 @@
     "asarUnpack": [
       "**/better-sqlite3/build/Release/*.node"
     ],
+    "writeUpdateInfo": false,
     "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
+      "target": ["dmg"],
       "icon": "assets/icon.icns",
       "compression": "maximum",
       "identity": null
     },
     "win": {
-      "target": [
-        "nsis",
-        "zip"
-      ],
+      "target": ["nsis"],
       "icon": "assets/icon.ico"
     },
     "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
+      "target": ["AppImage", "deb"],
       "icon": "assets/icon.png"
     }
   }
