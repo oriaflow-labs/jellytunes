@@ -1,6 +1,6 @@
 {
   "name": "jellytunes",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC",
   "main": "dist/main/index.js",
   "author": {
@@ -88,7 +88,12 @@
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "icon": "assets/icon.icns",
       "compression": "maximum",
