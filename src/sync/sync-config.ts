@@ -395,6 +395,6 @@ export function getRelativePath(serverPath: string, serverRootPath: string): str
  * @returns Filename with extension
  */
 export function getFilenameFromPath(serverPath: string): string {
-  const parts = serverPath.split('/');
+  const parts = serverPath.split(/[/\\]/);
   return parts[parts.length - 1] || '';
 }

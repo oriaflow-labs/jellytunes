@@ -966,6 +966,14 @@ describe('Server Root Path - Original Path Usage', () => {
 
       expect(result).toBe('');
     });
+
+    it('should extract filename from Windows backslash path', () => {
+      const serverPath = 'D:\\Music\\The Beatles\\1\\01 Love Me Do.mp3';
+
+      const result = getFilenameFromPath(serverPath);
+
+      expect(result).toBe('01 Love Me Do.mp3');
+    });
   });
 
   describe('validateSyncConfig with serverRootPath', () => {
