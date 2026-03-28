@@ -1,6 +1,6 @@
 {
   "name": "jellytunes",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC",
   "main": "dist/main/index.js",
   "author": {
@@ -84,7 +84,8 @@
       "!**/node_modules/better-sqlite3/**/*.h"
     ],
     "asarUnpack": [
-      "**/better-sqlite3/build/Release/*.node"
+      "**/better-sqlite3/build/Release/*.node",
+      "**/node_modules/@ffmpeg-installer/**"
     ],
     "mac": {
       "target": [

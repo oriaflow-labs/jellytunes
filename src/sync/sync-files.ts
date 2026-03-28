@@ -6,6 +6,7 @@
  */
 
 import type { TrackInfo, DestinationValidation } from './types';
+import { resolveFFmpegPath } from './ffmpeg-path';
 
 /**
  * Filesystem interface (for dependency injection/testing)
@@ -236,30 +237,6 @@ export interface AudioConverter {
   
   /** Check if FFmpeg is available */
   isAvailable(): Promise<boolean>;
-}
-
-/**
- * Create FFmpeg converter using system FFmpeg or bundled binary
- */
-function resolveFFmpegPath(): string {
-  try {
-    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-    return ffmpegInstaller.path;
-  } catch {
-    // bundled binary not available, search common system paths
-  }
-
-  const { existsSync } = require('fs');
-  const candidates = [
-    '/usr/local/bin/ffmpeg',
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/bin/ffmpeg',
-    '/opt/local/bin/ffmpeg',
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return 'ffmpeg'; // last resort: rely on PATH
 }
 
 export function createFFmpegConverter(): AudioConverter {

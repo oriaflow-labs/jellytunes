@@ -7,6 +7,7 @@ import * as os from 'os'
 
 // Import new sync module
 import { createSyncCore, createValidatedConfig, validateDestination, createNodeFileSystem } from '../sync'
+import { resolveFFmpegPath } from '../sync/ffmpeg-path'
 
 // Import database
 import { initDatabase, recordSyncCompleted, getSyncedItemIds, getSyncedItems, getDeviceSyncInfo, getRecentSyncHistory, removeSyncedItems } from './database'
@@ -219,11 +220,7 @@ import * as path from 'path'
 async function convertTrackToMp3(inputPath: string, outputPath: string, bitrate: string): Promise<boolean> {
   return new Promise<boolean>((resolve: (value: boolean) => void) => {
     try {
-      let ffmpegPath: string
-      try {
-        const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
-        ffmpegPath = ffmpegInstaller.path
-      } catch (e) { ffmpegPath = 'ffmpeg' }
+      const ffmpegPath = resolveFFmpegPath()
       const args = ['-i', inputPath, '-ab', bitrate, '-ar', '44100', '-ac', '2', '-y', outputPath]
       const ffmpegProcess = spawn(ffmpegPath, args, { stdio: 'ignore' })
       ffmpegProcess.on('error', (err) => { log.error('FFmpeg error:', err); resolve(false) })
