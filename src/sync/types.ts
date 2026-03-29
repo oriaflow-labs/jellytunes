@@ -98,6 +98,8 @@ export interface TrackInfo {
   format: string;
   /** File size in bytes */
   size?: number;
+  /** Bitrate in bits per second (e.g. 320000 for 320 kbps), as reported by Jellyfin */
+  bitrate?: number;
   /** Track number */
   trackNumber?: number;
   /** Disc number */
@@ -217,6 +219,7 @@ export interface JellyfinTrackItem {
     Path: string;
     Container?: string;
     Size?: number;
+    Bitrate?: number;
   }>;
   IndexNumber?: number;
   ParentIndexNumber?: number;

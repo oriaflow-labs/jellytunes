@@ -75,6 +75,32 @@ function validatePathTraversal(basePath: string, relativePath: string): void {
   }
 }
 
+/** Formats that always need conversion to MP3 (lossless or incompatible containers) */
+const LOSSLESS_FORMATS = new Set(['flac', 'wav', 'aiff', 'aif', 'wv', 'ape', 'alac']);
+
+/**
+ * Returns true when a track should be run through FFmpeg conversion.
+ *
+ * Rules:
+ * - Non-MP3 lossless/incompatible formats → always convert
+ * - Other non-MP3 formats (m4a, aac, ogg, opus, wma) → always convert
+ * - MP3 → only convert if the source bitrate is KNOWN and exceeds the target
+ *   (unknown bitrate = safe default: copy as-is to avoid unnecessary re-encoding)
+ */
+function needsConversion(track: { format: string; bitrate?: number }, targetBitrateKbps: number): boolean {
+  const fmt = track.format.toLowerCase();
+  if (fmt === 'mp3') {
+    // Re-encode only when we know the source is higher than the target
+    return track.bitrate !== undefined && track.bitrate > targetBitrateKbps * 1000;
+  }
+  return true; // all non-MP3 formats need conversion
+}
+
+/** Parse bitrate option string to kbps number (e.g. '192k' → 192) */
+function bitrateStringToKbps(bitrate: '128k' | '192k' | '320k'): number {
+  return parseInt(bitrate, 10);
+}
+
 /** No-op logger used when no logger is injected (keeps module testable) */
 const noopLogger: SyncLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
 
@@ -240,7 +266,8 @@ class SyncCoreImpl {
           const outputDir = this.getOutputDir(track, input.destinationPath, options.preserveStructure ?? true, options.filesystemType ?? 'unknown');
           await ensureDirectory(outputDir, this.deps.fs);
 
-          const willConvert = options.convertToMp3 === true;
+          const targetBitrateKbps = bitrateStringToKbps(options.bitrate ?? '192k');
+          const willConvert = options.convertToMp3 === true && needsConversion(track, targetBitrateKbps);
 
           // Resolve the canonical filename (no uniqueness suffix yet)
           const outputFilename = this.resolveCanonicalFilename(track, options);

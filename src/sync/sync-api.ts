@@ -366,6 +366,7 @@ class SyncApiImpl implements SyncApi {
       path: source?.Path ?? '',
       format: source?.Container ?? 'unknown',
       size: source?.Size,
+      bitrate: source?.Bitrate,
       trackNumber: item.IndexNumber,
       discNumber: item.ParentIndexNumber,
     };

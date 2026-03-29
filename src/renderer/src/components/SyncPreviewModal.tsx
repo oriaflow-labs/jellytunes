@@ -51,8 +51,25 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
             </div>
           )}
           {convertToMp3 && (
-            <div className="text-xs text-zinc-500 bg-zinc-800 rounded p-2">
-              FLAC/lossless will be converted to MP3 {bitrate}
+            <div className="text-xs text-zinc-500 bg-zinc-800 rounded p-2 space-y-1">
+              {(() => {
+                const formats = Object.keys(data.formatBreakdown).map(f => f.toLowerCase());
+                const lossless = formats.filter(f => !['mp3'].includes(f));
+                const hasMp3 = formats.includes('mp3');
+                return (
+                  <>
+                    {lossless.length > 0 && (
+                      <div>{lossless.map(f => f.toUpperCase()).join(', ')} → MP3 {bitrate}</div>
+                    )}
+                    {hasMp3 && (
+                      <div>MP3 tracks above {bitrate} → re-encoded to {bitrate}</div>
+                    )}
+                    {lossless.length === 0 && !hasMp3 && (
+                      <div>Tracks will be converted to MP3 {bitrate}</div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
