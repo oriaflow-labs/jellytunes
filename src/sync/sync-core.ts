@@ -820,6 +820,7 @@ export function createSyncCore(config: SyncConfig, deps?: Partial<SyncDependenci
 
   return {
     sync: (input, onProgress) => core.sync(input, onProgress),
+    cancel: () => core.cancel(),
     validateDestination: (path) => core.validateDestination(path),
     estimateSize: (itemIds, itemTypes) => core.estimateSize(itemIds, itemTypes),
     removeItems: (itemIds, itemTypes, destinationPath) => core.removeItems(itemIds, itemTypes, destinationPath),
@@ -832,6 +833,7 @@ export function createSyncCore(config: SyncConfig, deps?: Partial<SyncDependenci
  */
 export interface SyncCore {
   sync(input: SyncInput, onProgress?: ProgressCallback): Promise<SyncResult>;
+  cancel(): void;
   validateDestination(path: string): Promise<DestinationValidation>;
   estimateSize(itemIds: string[], itemTypes: Map<string, ItemType>): Promise<SizeEstimate>;
   removeItems(itemIds: string[], itemTypes: Map<string, ItemType>, destinationPath: string): Promise<{ removed: number; errors: string[] }>;

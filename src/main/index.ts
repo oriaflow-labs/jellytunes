@@ -230,6 +230,7 @@ async function convertTrackToMp3(inputPath: string, outputPath: string, bitrate:
 }
 
 let isSyncCancelled = false
+let activeSyncCore: import('../sync').SyncCore | null = null
 
 // Helper to extract server root from a file path
 // Example: /mediamusic/lib/lib/4 Strings/Album/track.flac -> /mediamusic/lib/lib/
@@ -379,6 +380,7 @@ async function syncTracks(options: { tracks: Array<{ id: string; name: string; p
 
 function cancelSync(): void {
   isSyncCancelled = true
+  activeSyncCore?.cancel()
   log.info('Sync cancellation requested')
 }
 
@@ -578,6 +580,7 @@ ipcMain.handle('sync:start2', async (event, options) => {
         },
       }
     )
+    activeSyncCore = syncCore
 
     // Convert itemTypes to Map if needed
     const itemTypesMap = itemTypes instanceof Map ? itemTypes : new Map(Object.entries(itemTypes))
@@ -615,6 +618,7 @@ ipcMain.handle('sync:start2', async (event, options) => {
       }
     )
     
+    activeSyncCore = null
     log.info(`Sync v2 completed: ${result.tracksCopied} copied, ${result.tracksSkipped} skipped, ${result.errors.length} errors`)
 
     // Record to SQLite
@@ -636,9 +640,10 @@ ipcMain.handle('sync:start2', async (event, options) => {
       errors: result.errors,
       totalSizeBytes: result.totalSizeBytes,
     }
-  } catch (error) { 
-    log.error('Sync v2 error:', error); 
-    return { success: false, errors: [error instanceof Error ? error.message : String(error)], tracksCopied: 0 } 
+  } catch (error) {
+    activeSyncCore = null
+    log.error('Sync v2 error:', error);
+    return { success: false, errors: [error instanceof Error ? error.message : String(error)], tracksCopied: 0 }
   }
 })
 ipcMain.handle('sync:cancel', () => { cancelSync(); return { cancelled: true } })
