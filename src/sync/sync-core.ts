@@ -296,9 +296,15 @@ class SyncCoreImpl {
 
           // Copy or convert
           if (willConvert) {
+            const bitrateInfo = track.bitrate ? ` (source ${Math.round(track.bitrate / 1000)}kbps)` : '';
+            this.log.debug(`Convert: ${track.name} [${track.format.toUpperCase()}${bitrateInfo}] → MP3 ${options.bitrate ?? '192k'}`);
             await this.convertAndCopy(track, outputPath, options.bitrate ?? '192k');
             stats.itemsConverted++;
           } else {
+            const reason = options.convertToMp3 && track.format.toLowerCase() === 'mp3'
+              ? ` (MP3 ${track.bitrate ? Math.round(track.bitrate / 1000) + 'kbps ≤ target' : 'bitrate unknown, skipping re-encode'})`
+              : '';
+            this.log.debug(`Copy: ${track.name} [${track.format.toUpperCase()}]${reason}`);
             // Download from Jellyfin server instead of local copy
             // track.path is a server path that doesn't exist locally
             const data = await this.deps.api.downloadItem(track.id);
