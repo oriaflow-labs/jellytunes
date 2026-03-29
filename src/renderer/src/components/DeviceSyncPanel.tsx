@@ -72,10 +72,15 @@ const STATE_TEXT: Record<ItemState, string> = {
 
 function ConfirmRemove({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="flex items-center gap-2 p-2 bg-red-900/20 border border-red-800/50 rounded-lg text-sm">
-      <span className="text-red-300 flex-1">Remove <strong>{name}</strong> from destinations?</span>
-      <button onClick={onCancel} className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded transition-colors">Cancel</button>
-      <button onClick={onConfirm} className="px-2 py-1 text-xs bg-red-700 hover:bg-red-600 text-white rounded transition-colors">Remove</button>
+    <div className="p-3 bg-red-900/20 border border-red-800/50 rounded-lg text-sm space-y-2">
+      <p className="text-zinc-300">
+        Remove <strong>{name}</strong> from the sidebar?{' '}
+        <span className="text-zinc-500">Sync history is kept — re-add the folder any time to restore it.</span>
+      </p>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded transition-colors">Cancel</button>
+        <button onClick={onConfirm} className="px-3 py-1 text-xs bg-red-700 hover:bg-red-600 text-white rounded transition-colors">Remove</button>
+      </div>
     </div>
   )
 }
@@ -179,7 +184,7 @@ export function DeviceSyncPanel({
             <button
               onClick={() => setConfirmingRemove(true)}
               className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
-              title="Remove destination"
+              title="Remove from sidebar"
             >
               <Trash2 className="w-4 h-4" />
             </button>

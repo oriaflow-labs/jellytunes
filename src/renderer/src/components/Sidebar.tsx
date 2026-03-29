@@ -1,4 +1,5 @@
-import { User, Disc, ListMusic, HardDrive, Folder, Plus, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
+import { User, Disc, ListMusic, HardDrive, Folder, Plus, RotateCcw, X } from 'lucide-react'
 import type { ActiveSection, LibraryTab, LibraryStats, PaginationState, Artist, Album, Playlist, UsbDevice, SavedDestination } from '../appTypes'
 
 interface SidebarProps {
@@ -16,6 +17,7 @@ interface SidebarProps {
   onDestinationClick: (path: string) => void
   onAddFolder: () => void
   onRefreshDevices: () => void
+  onRemoveDestination: (id: string) => void
 }
 
 export function Sidebar({
@@ -33,7 +35,10 @@ export function Sidebar({
   onDestinationClick,
   onAddFolder,
   onRefreshDevices,
+  onRemoveDestination,
 }: SidebarProps): JSX.Element {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
   const tabClass = (active: boolean) =>
     `w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${active ? 'bg-jf-purple/20 text-jf-purple-light border border-jf-purple/40' : 'hover:bg-zinc-800 text-zinc-300 border border-transparent'}`
 
@@ -119,16 +124,49 @@ export function Sidebar({
 
           {/* Saved folders */}
           {savedDestinations.map(dest => (
-            <button
-              key={dest.id}
-              data-testid="device-item"
-              data-device-path={dest.path}
-              onClick={() => onDestinationClick(dest.path)}
-              className={destClass(dest.path)}
-            >
-              <Folder className="w-4 h-4 flex-shrink-0" />
-              <span className="truncate">{dest.name}</span>
-            </button>
+            <div key={dest.id} className="rounded-lg overflow-hidden">
+              {confirmingId === dest.id ? (
+                <div className="px-3 py-2 bg-red-900/20 border border-red-800/40 rounded-lg">
+                  <p className="text-xs text-zinc-300 mb-2 leading-snug">
+                    Remove <span className="font-medium text-white">{dest.name}</span>?{' '}
+                    <span className="text-zinc-500">Sync history is kept.</span>
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setConfirmingId(null)}
+                      className="flex-1 px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { setConfirmingId(null); onRemoveDestination(dest.id) }}
+                      className="flex-1 px-2 py-1 text-xs bg-red-700 hover:bg-red-600 text-white rounded transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative group/dest">
+                  <button
+                    data-testid="device-item"
+                    data-device-path={dest.path}
+                    onClick={() => onDestinationClick(dest.path)}
+                    className={`${destClass(dest.path)} pr-7`}
+                  >
+                    <Folder className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">{dest.name}</span>
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setConfirmingId(dest.id) }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover/dest:opacity-100 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 transition-all"
+                    title="Remove from sidebar"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
 
           {/* Separator + Add folder */}

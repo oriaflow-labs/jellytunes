@@ -217,6 +217,10 @@ function App(): JSX.Element {
           onDestinationClick={handleDestinationClick}
           onAddFolder={handleAddFolder}
           onRefreshDevices={refreshDevices}
+          onRemoveDestination={id => {
+            const dest = savedDestinations.find(d => d.id === id)
+            if (dest) handleRemoveDestination(dest.path)
+          }}
         />
 
         <div className="flex-1 overflow-hidden flex flex-col">
