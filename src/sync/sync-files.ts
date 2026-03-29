@@ -234,7 +234,14 @@ export interface AudioConverter {
     output: string,
     bitrate: '128k' | '192k' | '320k'
   ): Promise<{ success: boolean; error?: string }>;
-  
+
+  /** Convert audio stream (Node.js Readable) to MP3 via FFmpeg stdin */
+  convertStreamToMp3(
+    input: NodeJS.ReadableStream,
+    output: string,
+    bitrate: '128k' | '192k' | '320k'
+  ): Promise<{ success: boolean; error?: string }>;
+
   /** Check if FFmpeg is available */
   isAvailable(): Promise<boolean>;
 }
@@ -275,6 +282,45 @@ export function createFFmpegConverter(): AudioConverter {
       });
     },
     
+    convertStreamToMp3: async (inputStream, output, bitrate) => {
+      const { spawn } = require('child_process');
+
+      return new Promise((resolve) => {
+        const args = [
+          '-i', 'pipe:0',  // read from stdin
+          '-vn',
+          '-ab', bitrate,
+          '-ar', '44100',
+          '-ac', '2',
+          '-y',
+          output,
+        ];
+
+        const proc = spawn(ffmpegPath, args, { stdio: ['pipe', 'ignore', 'ignore'] });
+
+        proc.on('error', (err: Error) => {
+          resolve({ success: false, error: `FFmpeg error: ${err.message}` });
+        });
+
+        proc.on('close', (code: number) => {
+          resolve({
+            success: code === 0,
+            error: code !== 0 ? `FFmpeg exited with code ${code}` : undefined,
+          });
+        });
+
+        // Suppress EPIPE — FFmpeg may close stdin early on format error
+        proc.stdin.on('error', () => {});
+
+        inputStream.on('error', (err: Error) => {
+          try { proc.kill(); } catch { /* already dead */ }
+          resolve({ success: false, error: `Stream error: ${err.message}` });
+        });
+
+        inputStream.pipe(proc.stdin);
+      });
+    },
+
     isAvailable: async () => {
       const { execSync } = require('child_process');
       try {
@@ -293,6 +339,7 @@ export function createFFmpegConverter(): AudioConverter {
 export function createMockConverter(): AudioConverter {
   return {
     convertToMp3: async () => ({ success: true }),
+    convertStreamToMp3: async () => ({ success: true }),
     isAvailable: async () => true,
   };
 }

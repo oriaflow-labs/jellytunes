@@ -78,6 +78,9 @@ export interface SyncApi {
   
   /** Download item from Jellyfin server */
   downloadItem(itemId: string): Promise<Buffer>;
+
+  /** Stream item from Jellyfin server as a Node.js Readable */
+  downloadItemStream(itemId: string): Promise<NodeJS.ReadableStream>;
 }
 
 /**
@@ -306,6 +309,38 @@ class SyncApiImpl implements SyncApi {
     };
   }
 
+  async downloadItemStream(itemId: string): Promise<NodeJS.ReadableStream> {
+    const url = `${this.baseUrl}/Items/${itemId}/Download`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout * 10);
+
+    try {
+      const response = await this.fetchFn(url, {
+        method: 'GET',
+        headers: { 'X-MediaBrowser-Token': this.apiKey, 'X-Emby-Token': this.apiKey },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new ApiError(`Download failed: ${response.status} ${response.statusText}`, response.status);
+      }
+      if (!response.body) {
+        throw new ApiError('Download failed: empty response body', 0);
+      }
+
+      // Convert Web ReadableStream → Node.js Readable (Node 16.7+, Electron 22+)
+      const { Readable } = require('stream');
+      return Readable.fromWeb(response.body);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof ApiError) throw error;
+      if (error instanceof Error && error.name === 'AbortError') throw new ApiError('Download timed out', 408);
+      throw new ApiError(`Network error: ${error instanceof Error ? error.message : String(error)}`, 0);
+    }
+  }
+
   async downloadItem(itemId: string): Promise<Buffer> {
     const url = `${this.baseUrl}/Items/${itemId}/Download`;
     const DOWNLOAD_TIMEOUT_MULTIPLIER = 10;
@@ -445,6 +480,10 @@ export function createMockApiClient(overrides?: Partial<SyncApi>): SyncApi {
     getItem: async () => null,
     getLibraryStats: async () => ({ artists: 0, albums: 0, tracks: 0 }),
     downloadItem: async () => Buffer.from(''),
+    downloadItemStream: async () => {
+      const { Readable } = require('stream');
+      return Readable.from(Buffer.from(''));
+    },
   };
   
   return { ...defaultMock, ...overrides };

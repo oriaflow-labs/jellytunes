@@ -56,7 +56,6 @@ import {
   ProgressStats,
   SyncCancelledError,
 } from './sync-progress';
-import { buildTempPaths } from './temp-path';
 
 /**
  * Validate that a path stays within allowed boundaries (prevent path traversal)
@@ -79,11 +78,16 @@ function validatePathTraversal(basePath: string, relativePath: string): void {
 const LOSSLESS_FORMATS = new Set(['flac', 'wav', 'aiff', 'aif', 'wv', 'ape', 'alac']);
 
 /**
- * Max concurrent track operations (download + convert/copy).
- * 3 slots lets download N+1 overlap with FFmpeg on N while N-1 finishes writing,
- * without spawning so many FFmpeg processes that they fight for CPU on slow hardware.
+ * Concurrency for tracks that need FFmpeg conversion.
+ * 3 slots overlaps download with encoding without thrashing CPU on slow hardware.
  */
-const TRACK_CONCURRENCY = 3;
+const CONVERT_CONCURRENCY = 3;
+
+/**
+ * Concurrency for copy-only tracks (no FFmpeg).
+ * Bottleneck is network; CPU is idle so more parallel downloads help.
+ */
+const COPY_CONCURRENCY = 6;
 
 /**
  * Run `fn` over `items` with at most `concurrency` tasks in-flight at once.
@@ -286,9 +290,12 @@ class SyncCoreImpl {
       phaseManager.startCopying(tracks.length);
 
       const targetBitrateKbps = bitrateStringToKbps(options.bitrate ?? '192k');
+      const anyWillConvert = options.convertToMp3 === true &&
+        tracks.some(t => needsConversion(t, targetBitrateKbps));
+      const concurrency = anyWillConvert ? CONVERT_CONCURRENCY : COPY_CONCURRENCY;
       let completed = 0;
 
-      await runWithConcurrency(tracks, TRACK_CONCURRENCY, async (track) => {
+      await runWithConcurrency(tracks, concurrency, async (track) => {
         // Bail early if cancelled — don't start new work
         if (this.cancellation.isCancelled()) return;
 
@@ -792,51 +799,15 @@ class SyncCoreImpl {
   }
 
   private async convertAndCopy(
-    track: { id: string; path: string; name: string },
+    track: { id: string; name: string },
     outputPath: string,
     bitrate: '128k' | '192k' | '320k'
   ): Promise<void> {
-    const timestamp = Date.now();
-    const { sourcePath } = buildTempPaths(track.name, timestamp);
-
-    // Only the downloaded source needs cleanup — FFmpeg writes directly to outputPath
-    const tempFiles: string[] = [sourcePath];
-    
-    const cleanup = async (): Promise<void> => {
-      for (const file of tempFiles) {
-        try {
-          if (await this.deps.fs.exists(file)) {
-            await this.deps.fs.unlink(file);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
-      tempFiles.length = 0;
-    };
-    
-    try {
-      // Download from Jellyfin server first
-      const data = await this.deps.api.downloadItem(track.id);
-      await this.deps.fs.writeFile(sourcePath, data);
-
-      // Convert directly to the final destination — no intermediate copy needed
-      const result = await this.deps.converter.convertToMp3(
-        sourcePath,
-        outputPath,
-        bitrate
-      );
-
-      if (!result.success) {
-        throw new Error(result.error ?? 'Conversion failed');
-      }
-
-      // Clean up temp files on success
-      await cleanup();
-    } catch (error) {
-      // Clean up temp files on error (critical to prevent memory leak)
-      await cleanup();
-      throw error;
+    // Stream directly from Jellyfin into FFmpeg stdin — no temp file on disk
+    const stream = await this.deps.api.downloadItemStream(track.id);
+    const result = await this.deps.converter.convertStreamToMp3(stream, outputPath, bitrate);
+    if (!result.success) {
+      throw new Error(result.error ?? 'Conversion failed');
     }
   }
 }

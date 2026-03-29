@@ -466,26 +466,27 @@ describe('sync-core', () => {
       const deps = createMockDeps();
       const converter = {
         isAvailable: async () => true,
-        convertToMp3: vi.fn().mockResolvedValue({ success: true }),
+        convertToMp3: async () => ({ success: true }),
+        convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }),
       };
-      
+
       const core = createTestSyncCore(validConfig, { ...deps, converter });
-      
+
       const itemTypes = new Map<string, ItemType>([
         ['album-1', 'album'],
       ]);
-      
+
       const input: SyncInput = {
         itemIds: ['album-1'],
         itemTypes,
         destinationPath: '/music',
         options: { convertToMp3: true, bitrate: '320k' },
       };
-      
+
       const result = await core.sync(input);
-      
+
       // FLAC track should trigger conversion
-      expect(converter.convertToMp3).toHaveBeenCalled();
+      expect(converter.convertStreamToMp3).toHaveBeenCalled();
     });
 
     it('should include errors for failed tracks', async () => {
@@ -689,7 +690,8 @@ describe('Error Handling', () => {
     const deps = createMockDeps({
       converter: {
         isAvailable: async () => true,
-        convertToMp3: async () => ({ success: false, error: 'FFmpeg not installed' }),
+        convertToMp3: async () => ({ success: true }),
+        convertStreamToMp3: async () => ({ success: false, error: 'FFmpeg not installed' }),
       },
     });
     
@@ -729,18 +731,18 @@ describe('Error Handling', () => {
       };
     }
 
-    function makeDeps(tracks: TrackInfo[], converterMock: { convertToMp3: ReturnType<typeof vi.fn> }): SyncDependencies {
+    function makeDeps(tracks: TrackInfo[], converterMock: { convertStreamToMp3: ReturnType<typeof vi.fn> }): SyncDependencies {
       return {
         api: createMockApiClient({
           getTracksForItems: async () => ({ tracks, errors: [] }),
         }),
         fs: createMockFileSystem(),
-        converter: { isAvailable: async () => true, ...converterMock },
+        converter: { isAvailable: async () => true, convertToMp3: async () => ({ success: true }), ...converterMock },
       };
     }
 
     it('does NOT convert an MP3 whose bitrate is at or below the target', async () => {
-      const converter = { convertToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: 128_000 }); // 128 kbps, at target
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -751,11 +753,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '128k' },
       });
 
-      expect(converter.convertToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
     });
 
     it('re-encodes an MP3 whose bitrate is above the target', async () => {
-      const converter = { convertToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: 320_000 }); // 320 kbps, above 128k target
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -766,11 +768,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '128k' },
       });
 
-      expect(converter.convertToMp3).toHaveBeenCalledTimes(1);
+      expect(converter.convertStreamToMp3).toHaveBeenCalledTimes(1);
     });
 
     it('does NOT re-encode an MP3 with unknown bitrate (conservative: copy instead)', async () => {
-      const converter = { convertToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: undefined }); // bitrate unknown
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -781,11 +783,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '192k' },
       });
 
-      expect(converter.convertToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
     });
 
     it('always converts FLAC regardless of bitrate', async () => {
-      const converter = { convertToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'flac', path: '/music/track.flac', bitrate: 900_000 });
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -796,11 +798,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '320k' },
       });
 
-      expect(converter.convertToMp3).toHaveBeenCalledTimes(1);
+      expect(converter.convertStreamToMp3).toHaveBeenCalledTimes(1);
     });
 
     it('does not convert anything when convertToMp3 is false', async () => {
-      const converter = { convertToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'flac', path: '/music/track.flac', bitrate: 900_000 });
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -811,7 +813,7 @@ describe('Error Handling', () => {
         options: { convertToMp3: false },
       });
 
-      expect(converter.convertToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
     });
   });
 });
