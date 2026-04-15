@@ -1,13 +1,13 @@
 /**
  * Sync Module Unit Tests
- * 
+ *
  * Comprehensive tests for the sync module using Vitest.
  * Tests use mocked dependencies to isolate unit behavior.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SyncConfig, SyncInput, TrackInfo, ItemType } from './types';
-import { createSyncCore, createTestSyncCore, type SyncDependencies, type SyncCore } from './sync-core';
+import { createSyncCore, createTestSyncCore, type SyncDependencies } from './sync-core';
 import { createMockApiClient } from './sync-api';
 import { createMockFileSystem } from './sync-files';
 import { createMockConverter } from './sync-files';
@@ -25,6 +25,38 @@ import {
   createCancellationController,
   progress,
 } from './sync-progress';
+
+import { getSyncedTracksForDevice, getSyncedTracksForItem, getSyncedItems, upsertSyncedTrack } from '../main/database';
+
+// Stable mock for getSyncedTracksForItem — hoisted so the vi.mock factory below can reference it
+const mockGetSyncedTracksForItem = vi.hoisted(() => vi.fn(() => []));
+// Stable mock for getSyncedItems — hoisted for same reason
+const mockGetSyncedItems = vi.hoisted(() => vi.fn(() => []));
+
+// Mock database module so getSyncedTracksForDevice doesn't throw "Database not initialized"
+vi.mock('../main/database', () => ({
+  initDatabase: vi.fn(),
+  closeDatabase: vi.fn(),
+  upsertSyncedTrack: vi.fn(),
+  getSyncedTracksForDevice: vi.fn(() => []),
+  getSyncedTracksForItem: mockGetSyncedTracksForItem,
+  getSyncedItems: mockGetSyncedItems,
+  removeSyncedTracksForItem: vi.fn(),
+  removeSyncedTrack: vi.fn(),
+}));
+
+// Reset all database mocks between tests to prevent state leakage
+beforeEach(() => {
+  mockGetSyncedTracksForItem.mockReset();
+  mockGetSyncedTracksForItem.mockReturnValue([]);
+  mockGetSyncedItems.mockReset();
+  mockGetSyncedItems.mockReturnValue([]);
+});
+
+afterEach(() => {
+  mockGetSyncedTracksForItem.mockReset();
+  mockGetSyncedItems.mockReset();
+});
 
 // =============================================================================
 // TEST FIXTURES
@@ -467,7 +499,10 @@ describe('sync-core', () => {
       const converter = {
         isAvailable: async () => true,
         convertToMp3: async () => ({ success: true }),
-        convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }),
+        convertStreamToMp3: async () => ({ success: true }),
+        convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }),
+        tagFile: async () => ({ success: true }),
+        readFileMetadata: async () => ({}),
       };
 
       const core = createTestSyncCore(validConfig, { ...deps, converter });
@@ -483,10 +518,10 @@ describe('sync-core', () => {
         options: { convertToMp3: true, bitrate: '320k' },
       };
 
-      const result = await core.sync(input);
+      await core.sync(input);
 
       // FLAC track should trigger conversion
-      expect(converter.convertStreamToMp3).toHaveBeenCalled();
+      expect(converter.convertStreamToMp3WithMeta).toHaveBeenCalled();
     });
 
     it('should include errors for failed tracks', async () => {
@@ -692,11 +727,14 @@ describe('Error Handling', () => {
         isAvailable: async () => true,
         convertToMp3: async () => ({ success: true }),
         convertStreamToMp3: async () => ({ success: false, error: 'FFmpeg not installed' }),
+        convertStreamToMp3WithMeta: async () => ({ success: false, error: 'FFmpeg not installed' }),
+        tagFile: async () => ({ success: true }),
+        readFileMetadata: async () => ({}),
       },
     });
-    
+
     const core = createTestSyncCore(validConfig, deps);
-    
+
     const itemTypes = new Map<string, ItemType>([['album-1', 'album']]);
     
     const result = await core.sync({
@@ -708,6 +746,154 @@ describe('Error Handling', () => {
     
     // FLAC track should fail conversion
     expect(result.tracksFailed.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Re-tag without re-download (Phase 3)
+  // When metadata changes but file exists, converter.tagFile() is called
+  // without calling api.downloadItemStream()
+  // ---------------------------------------------------------------------------
+  describe('re-tag without re-download', () => {
+    function makeTrack(overrides: Partial<TrackInfo>): TrackInfo {
+      return {
+        id: 'track-x',
+        name: 'track',
+        album: 'Album',
+        artists: ['Artist'],
+        path: '/music/Artist/Album/track.mp3', // Must match existingRecord.destinationPath after serverRootPath stripping
+        format: 'mp3',
+        size: 5_000_000,
+        trackNumber: 1,
+        ...overrides,
+      };
+    }
+
+    it('re-tags metadata-only changes without downloading', async () => {
+      const downloadSpy = vi.fn();
+      const tagFileSpy = vi.fn().mockResolvedValue({ success: true });
+
+      // Test-local config with explicit serverRootPath to ensure path matching works
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/',
+      };
+
+      const deps = createMockDeps({
+        api: createMockApiClient({
+          getTracksForItems: async () => ({
+            tracks: [makeTrack({ id: 'track-x', name: 'Updated Track' })],
+            errors: [],
+          }),
+          downloadItemStream: downloadSpy,
+        }),
+        converter: {
+          ...createMockConverter(),
+          tagFile: tagFileSpy,
+        },
+      });
+
+      // Override getSyncedTracksForDevice to return a record with DIFFERENT metadata hash
+      // so sync detects metadataChanged = true
+      const existingRecord = {
+        id: 1,
+        deviceId: 1,
+        itemId: 'album-1',
+        trackId: 'track-x',
+        destinationPath: '/music/Artist/Album/track.mp3',
+        fileSize: 5_000_000,
+        metadataHash: 'old_hash_value_12', // different from server → metadataChanged
+        coverArtMode: 'embed',
+        encodedBitrate: '192k',
+        serverPath: '/music/track.mp3',
+        serverRootPath: null,
+        syncedAt: new Date().toISOString(),
+      } as const;
+
+      vi.mocked(getSyncedTracksForDevice).mockReturnValueOnce([existingRecord] as any);
+      vi.mocked(getSyncedTracksForItem).mockReturnValueOnce([existingRecord] as any);
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      await core.sync({
+        itemIds: ['album-1'],
+        itemTypes: new Map([['album-1', 'album' as ItemType]]),
+        destinationPath: '/music',
+        options: { convertToMp3: false },
+      });
+
+      // tagFile should be called (re-tag) but downloadItemStream should NOT be called (no re-download)
+      expect(tagFileSpy).toHaveBeenCalled();
+      expect(downloadSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Move detection without re-download (Phase 3)
+  // When path changes but metadata same, upsertSyncedTrack is called with new path
+  // without any file copy operations
+  // ---------------------------------------------------------------------------
+  describe('move detection without re-download', () => {
+    function makeTrack(overrides: Partial<TrackInfo>): TrackInfo {
+      return {
+        id: 'track-x',
+        name: 'Test Track',
+        album: 'Album',
+        artists: ['Artist'],
+        path: '/music/NewAlbum/track.mp3', // new path on server (album renamed)
+        format: 'mp3',
+        size: 5_000_000,
+        trackNumber: 1,
+        ...overrides,
+      };
+    }
+
+    it('detects moved track and updates DB without re-downloading', async () => {
+      const downloadSpy = vi.fn();
+
+      const deps = createMockDeps({
+        api: createMockApiClient({
+          getTracksForItems: async () => ({
+            tracks: [makeTrack({ path: '/music/NewAlbum/track.mp3' })],
+            errors: [],
+          }),
+          downloadItemStream: downloadSpy,
+        }),
+      });
+
+      // Override getSyncedTracksForDevice to return a record at the OLD path
+      // but with SAME metadata hash (so metadataChanged = false, pathChanged = true)
+      const existingRecord = {
+        id: 1,
+        deviceId: 1,
+        itemId: 'album-1',
+        trackId: 'track-x',
+        destinationPath: '/music/OldAlbum/track.mp3', // old path
+        fileSize: 5_000_000,
+        metadataHash: 'abc123def456', // same hash as server would compute for this track
+        coverArtMode: 'embed',
+        encodedBitrate: '192k',
+        serverPath: '/music/OldAlbum/track.mp3',
+        serverRootPath: null,
+        syncedAt: new Date().toISOString(),
+      } as const;
+
+      vi.mocked(getSyncedTracksForDevice).mockResolvedValueOnce([existingRecord] as any);
+      vi.mocked(getSyncedTracksForItem).mockResolvedValueOnce([existingRecord] as any);
+
+      const core = createTestSyncCore(validConfig, deps);
+
+      await core.sync({
+        itemIds: ['album-1'],
+        itemTypes: new Map([['album-1', 'album' as ItemType]]),
+        destinationPath: '/music',
+        options: { convertToMp3: false },
+      });
+
+      // upsertSyncedTrack should be called (update DB with new path)
+      // but NO download should occur for the moved track
+      expect(vi.mocked(upsertSyncedTrack)).toHaveBeenCalled();
+      expect(downloadSpy).not.toHaveBeenCalled();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -731,18 +917,18 @@ describe('Error Handling', () => {
       };
     }
 
-    function makeDeps(tracks: TrackInfo[], converterMock: { convertStreamToMp3: ReturnType<typeof vi.fn> }): SyncDependencies {
+    function makeDeps(tracks: TrackInfo[], converterMock: Partial<import('./sync-files').AudioConverter>): SyncDependencies {
       return {
         api: createMockApiClient({
           getTracksForItems: async () => ({ tracks, errors: [] }),
         }),
         fs: createMockFileSystem(),
-        converter: { isAvailable: async () => true, convertToMp3: async () => ({ success: true }), ...converterMock },
+        converter: { ...createMockConverter(), ...converterMock },
       };
     }
 
     it('does NOT convert an MP3 whose bitrate is at or below the target', async () => {
-      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: 128_000 }); // 128 kbps, at target
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -753,11 +939,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '128k' },
       });
 
-      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3WithMeta).not.toHaveBeenCalled();
     });
 
     it('re-encodes an MP3 whose bitrate is above the target', async () => {
-      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: 320_000 }); // 320 kbps, above 128k target
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -768,11 +954,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '128k' },
       });
 
-      expect(converter.convertStreamToMp3).toHaveBeenCalledTimes(1);
+      expect(converter.convertStreamToMp3WithMeta).toHaveBeenCalledTimes(1);
     });
 
     it('does NOT re-encode an MP3 with unknown bitrate (conservative: copy instead)', async () => {
-      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'mp3', bitrate: undefined }); // bitrate unknown
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -783,11 +969,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '192k' },
       });
 
-      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3WithMeta).not.toHaveBeenCalled();
     });
 
     it('always converts FLAC regardless of bitrate', async () => {
-      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'flac', path: '/music/track.flac', bitrate: 900_000 });
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -798,11 +984,11 @@ describe('Error Handling', () => {
         options: { convertToMp3: true, bitrate: '320k' },
       });
 
-      expect(converter.convertStreamToMp3).toHaveBeenCalledTimes(1);
+      expect(converter.convertStreamToMp3WithMeta).toHaveBeenCalledTimes(1);
     });
 
     it('does not convert anything when convertToMp3 is false', async () => {
-      const converter = { convertStreamToMp3: vi.fn().mockResolvedValue({ success: true }) };
+      const converter = { convertStreamToMp3WithMeta: vi.fn().mockResolvedValue({ success: true }) };
       const track = makeTrack({ format: 'flac', path: '/music/track.flac', bitrate: 900_000 });
       const core = createTestSyncCore(validConfig, makeDeps([track], converter));
 
@@ -813,7 +999,7 @@ describe('Error Handling', () => {
         options: { convertToMp3: false },
       });
 
-      expect(converter.convertStreamToMp3).not.toHaveBeenCalled();
+      expect(converter.convertStreamToMp3WithMeta).not.toHaveBeenCalled();
     });
   });
 });
@@ -888,12 +1074,8 @@ describe('Integration: Real API Tests', () => {
 
     const { createApiClient } = await import('./sync-api');
     const { createSyncCore } = await import('./sync-core');
-    const api = createApiClient({
-      baseUrl: serverUrl,
-      apiKey,
-      userId,
-      timeout: 60000,
-    });
+    void createApiClient;
+    void createSyncCore;
 
     // This would need a real item ID from the server
     // Skip if no test albums exist
@@ -1123,11 +1305,17 @@ describe('Server Root Path - Original Path Usage', () => {
 
   describe('sync with serverRootPath', () => {
     it('should use original server path when serverRootPath is configured', async () => {
+      const mockFs = createMockFileSystem();
+
       const mockApi = createMockApiClient({
         getTracksForItems: async () => ({ tracks: tracksWithServerPath, errors: [] }),
+        downloadItem: async () => Buffer.alloc(100),
+        downloadItemStream: async () => {
+          const { Readable } = require('stream');
+          return Readable.from(Buffer.alloc(100));
+        },
       });
 
-      const mockFs = createMockFileSystem();
       // Set up source files
       (mockFs as any).__setFile(
         '/mediamusic/lib/lib/Ace/Five-A-Side/Ace - Five-A-Side - How Long.mp3',
@@ -1138,10 +1326,24 @@ describe('Server Root Path - Original Path Usage', () => {
         Buffer.alloc(4000000)
       );
 
+      // tagFile mock that actually copies the file (simulates real FFmpeg behavior)
+      const mockConverter = {
+        isAvailable: async () => true,
+        convertToMp3: async () => ({ success: true }),
+        convertStreamToMp3: async () => ({ success: true }),
+        convertStreamToMp3WithMeta: async () => ({ success: true }),
+        tagFile: async (inputPath: string, outputPath: string) => {
+          const data = await mockFs.readFile(inputPath);
+          await mockFs.writeFile(outputPath, data);
+          return { success: true };
+        },
+        readFileMetadata: async () => ({}),
+      };
+
       const deps: SyncDependencies = {
         api: mockApi,
         fs: mockFs,
-        converter: createMockConverter(),
+        converter: mockConverter,
       };
 
       const core = createTestSyncCore(validConfigWithServerRoot, deps);
@@ -1162,23 +1364,40 @@ describe('Server Root Path - Original Path Usage', () => {
       // Verify files were written to correct paths using __getFile
       const expectedPath1 = '/Volumes/MEDIA/lib/Ace/Five-A-Side/Ace - Five-A-Side - How Long.mp3';
       const expectedPath2 = '/Volumes/MEDIA/lib/Ace/Five-A-Side/Ace - Five-A-Side - Twenty Years Later.mp3';
-      
+
       expect((mockFs as any).__getFile(expectedPath1)).toBeDefined();
       expect((mockFs as any).__getFile(expectedPath2)).toBeDefined();
     });
 
     it('should auto-detect serverRootPath and preserve lib folder in destination', async () => {
+      const mockFs = createMockFileSystem();
+
       const mockApi = createMockApiClient({
         getTracksForItems: async () => ({ tracks: tracksWithServerPath, errors: [] }),
         downloadItem: async () => Buffer.alloc(100),
+        downloadItemStream: async () => {
+          const { Readable } = require('stream');
+          return Readable.from(Buffer.alloc(100));
+        },
       });
 
-      const mockFs = createMockFileSystem();
+      const mockConverter = {
+        isAvailable: async () => true,
+        convertToMp3: async () => ({ success: true }),
+        convertStreamToMp3: async () => ({ success: true }),
+        convertStreamToMp3WithMeta: async () => ({ success: true }),
+        tagFile: async (inputPath: string, outputPath: string) => {
+          const data = await mockFs.readFile(inputPath);
+          await mockFs.writeFile(outputPath, data);
+          return { success: true };
+        },
+        readFileMetadata: async () => ({}),
+      };
 
       const deps: SyncDependencies = {
         api: mockApi,
         fs: mockFs,
-        converter: createMockConverter(),
+        converter: mockConverter,
       };
 
       // Config without serverRootPath — auto-detection should kick in
@@ -1203,20 +1422,39 @@ describe('Server Root Path - Original Path Usage', () => {
     });
 
     it('should preserve filename exactly when using serverRootPath', async () => {
+      const mockFs = createMockFileSystem();
+
       const mockApi = createMockApiClient({
         getTracksForItems: async () => ({ tracks: tracksWithServerPath, errors: [] }),
+        downloadItem: async () => Buffer.alloc(100),
+        downloadItemStream: async () => {
+          const { Readable } = require('stream');
+          return Readable.from(Buffer.alloc(100));
+        },
       });
 
-      const mockFs = createMockFileSystem();
       (mockFs as any).__setFile(
         '/mediamusic/lib/lib/Ace/Five-A-Side/Ace - Five-A-Side - How Long.mp3',
         Buffer.alloc(5000000)
       );
 
+      const mockConverter = {
+        isAvailable: async () => true,
+        convertToMp3: async () => ({ success: true }),
+        convertStreamToMp3: async () => ({ success: true }),
+        convertStreamToMp3WithMeta: async () => ({ success: true }),
+        tagFile: async (inputPath: string, outputPath: string) => {
+          const data = await mockFs.readFile(inputPath);
+          await mockFs.writeFile(outputPath, data);
+          return { success: true };
+        },
+        readFileMetadata: async () => ({}),
+      };
+
       const deps: SyncDependencies = {
         api: mockApi,
         fs: mockFs,
-        converter: createMockConverter(),
+        converter: mockConverter,
       };
 
       const core = createTestSyncCore(validConfigWithServerRoot, deps);
@@ -1235,5 +1473,584 @@ describe('Server Root Path - Original Path Usage', () => {
       const expectedPath = '/Volumes/MEDIA/lib/Ace/Five-A-Side/Ace - Five-A-Side - How Long.mp3';
       expect((mockFs as any).__getFile(expectedPath)).toBeDefined();
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // analyzeDiff: H1 — batch API calls (no N+1)
+  // ---------------------------------------------------------------------------
+  describe('analyzeDiff batch API calls', () => {
+    it('fetches all items in a single getTracksForItems call', async () => {
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/',
+      };
+
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            { id: 'track-1', name: 'Track 1', album: 'Album', artists: ['Artist'], path: '/music/Artist/Album/track1.mp3', format: 'mp3', parentItemId: 'album-1' },
+            { id: 'track-2', name: 'Track 2', album: 'Album', artists: ['Artist'], path: '/music/Artist/Album/track2.mp3', format: 'mp3', parentItemId: 'album-1' },
+          ],
+          errors: [],
+        })
+      );
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      await core.analyzeDiff(
+        ['album-1'],
+        new Map([['album-1', 'album' as ItemType]]),
+        '/music',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      // Should be called exactly once (not once per item — no N+1)
+      expect(getTracksForItemsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('groups tracks by parentItemId for diff', async () => {
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/',
+      };
+
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            { id: 'track-1', name: 'Track 1', album: 'Album A', artists: ['Artist'], path: '/music/Artist/Album A/track1.mp3', format: 'mp3', parentItemId: 'album-1' },
+            { id: 'track-2', name: 'Track 2', album: 'Album A', artists: ['Artist'], path: '/music/Artist/Album A/track2.mp3', format: 'mp3', parentItemId: 'album-1' },
+            { id: 'track-3', name: 'Track 3', album: 'Album B', artists: ['Artist'], path: '/music/Artist/Album B/track3.mp3', format: 'mp3', parentItemId: 'album-2' },
+          ],
+          errors: [],
+        })
+      );
+
+      // Ensure the module-level mock returns an empty array synchronously
+      mockGetSyncedTracksForItem.mockReturnValue([]);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['album-1', 'album-2'],
+        new Map([
+          ['album-1', 'album' as ItemType],
+          ['album-2', 'album' as ItemType],
+        ]),
+        '/music',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      // album-1 should have 2 tracks, album-2 should have 1
+      const album1Diff = result.items.find(i => i.itemId === 'album-1');
+      const album2Diff = result.items.find(i => i.itemId === 'album-2');
+      expect(album1Diff?.changes.length).toBe(2);
+      expect(album2Diff?.changes.length).toBe(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // analyzeDiff: H3 — artist with new album: old tracks should be unchanged
+  // ---------------------------------------------------------------------------
+  describe('analyzeDiff artist with new album added', () => {
+    it('previously synced album tracks remain unchanged when new album is added to artist', async () => {
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/',
+      };
+
+      // Artist has TWO albums: old (previously synced) and new (just added)
+      // Use deep paths to avoid serverRootPath auto-detection issues
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            // Old album tracks - these were already synced
+            { id: 'track-old-1', name: 'Old Track 1', album: 'Old Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Old Album/track1.mp3', format: 'mp3', parentItemId: 'artist-1' },
+            { id: 'track-old-2', name: 'Old Track 2', album: 'Old Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Old Album/track2.mp3', format: 'mp3', parentItemId: 'artist-1' },
+            // New album tracks - these are brand new on server
+            { id: 'track-new-1', name: 'New Track 1', album: 'New Album', artists: ['Artist'], path: '/music/lib/lib/Artist/New Album/track1.mp3', format: 'mp3', parentItemId: 'artist-1' },
+          ],
+          errors: [],
+        })
+      );
+
+      // Previously synced tracks: only the OLD album tracks (from initial sync)
+      // These have metadataHash that should match the server tracks
+      // Computed using computeMetadataHash(buildMetadata(track))
+      const metadataHashOld1 = '32ba41d956e25e42';
+      const metadataHashOld2 = 'eb8249545f07eb00';
+
+      mockGetSyncedTracksForItem.mockReturnValue([
+        {
+          trackId: 'track-old-1',
+          itemId: 'artist-1',
+          // Synced with serverRootPath='/music/lib/lib/' (auto-detected from deep paths)
+          // serverRelativePath = 'Artist/Old Album/' → outputDir = /mnt/usb/Artist/Old Album
+          destinationPath: '/mnt/usb/Artist/Old Album/track1.mp3',
+          fileSize: 5000000,
+          metadataHash: metadataHashOld1,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: '/music/lib/lib/Artist/Old Album/track1.mp3',
+          serverRootPath: '/music/lib/lib/', // stored at sync time
+        },
+        {
+          trackId: 'track-old-2',
+          itemId: 'artist-1',
+          destinationPath: '/mnt/usb/Artist/Old Album/track2.mp3',
+          fileSize: 5000000,
+          metadataHash: metadataHashOld2,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: '/music/lib/lib/Artist/Old Album/track2.mp3',
+          serverRootPath: '/music/lib/lib/', // stored at sync time
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['artist-1'],
+        new Map([['artist-1', 'artist' as ItemType]]),
+        '/mnt/usb',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      expect(result.items).toHaveLength(1);
+      const artistDiff = result.items[0];
+      expect(artistDiff.itemId).toBe('artist-1');
+      expect(artistDiff.itemType).toBe('artist');
+
+      // Old tracks should be unchanged, new tracks should be new
+      const unchanged = artistDiff.changes.filter(c => c.changeType === 'unchanged');
+      const newTracks = artistDiff.changes.filter(c => c.changeType === 'new');
+
+      expect(unchanged).toHaveLength(2); // Old tracks should be unchanged
+      expect(newTracks).toHaveLength(1); // New album track should be new
+      expect(unchanged.map(c => c.trackId)).toEqual(['track-old-1', 'track-old-2']);
+      expect(newTracks.map(c => c.trackId)).toEqual(['track-new-1']);
+
+      // Totals should reflect: 1 new, 2 unchanged
+      expect(result.totals.newTracks).toBe(1);
+      expect(result.totals.unchanged).toBe(2);
+    });
+
+    it('keeps old tracks unchanged when serverRootPath differs from initial sync (serverRootPath fix)', async () => {
+      // This test reproduces the bug: if serverRootPath auto-detection gives a different
+      // result than what was used during initial sync, tracks show as "path_changed"
+      // even though content is unchanged.
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/', // User configured this during initial sync
+      };
+
+      // When analyzing, serverRootPath is auto-detected from track paths.
+      // If tracks have a different path structure, auto-detection gives a different result.
+      // OLD paths: /music/lib/lib/Artist/Old Album/track.mp3 (auto-detected: /music/lib/)
+      // NEW paths: /music/newlib/newlib/Artist/Old Album/track.mp3 (auto-detected: /music/newlib/)
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            // Tracks with NEW path structure (as if library was reorganized)
+            { id: 'track-old-1', name: 'Old Track 1', album: 'Old Album', artists: ['Artist'], path: '/music/newlib/newlib/Artist/Old Album/track1.mp3', format: 'mp3', parentItemId: 'artist-1' },
+            { id: 'track-old-2', name: 'Old Track 2', album: 'Old Album', artists: ['Artist'], path: '/music/newlib/newlib/Artist/Old Album/track2.mp3', format: 'mp3', parentItemId: 'artist-1' },
+          ],
+          errors: [],
+        })
+      );
+
+      // Synced with OLD path structure (serverRootPath = /music/lib/)
+      const metadataHashOld1 = '32ba41d956e25e42';
+      const metadataHashOld2 = 'eb8249545f07eb00';
+
+      mockGetSyncedTracksForItem.mockReturnValue([
+        {
+          trackId: 'track-old-1',
+          itemId: 'artist-1',
+          // Synced with serverRootPath='/music/lib/lib/' (auto-detected from deep paths)
+          // serverRelativePath = 'Artist/Old Album/' → outputDir = /mnt/usb/Artist/Old Album
+          destinationPath: '/mnt/usb/Artist/Old Album/track1.mp3',
+          fileSize: 5000000,
+          metadataHash: metadataHashOld1,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: '/music/lib/lib/Artist/Old Album/track1.mp3',
+          serverRootPath: '/music/lib/lib/', // stored at sync time
+        },
+        {
+          trackId: 'track-old-2',
+          itemId: 'artist-1',
+          destinationPath: '/mnt/usb/Artist/Old Album/track2.mp3',
+          fileSize: 5000000,
+          metadataHash: metadataHashOld2,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: '/music/lib/lib/Artist/Old Album/track2.mp3',
+          serverRootPath: '/music/lib/lib/', // stored at sync time
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['artist-1'],
+        new Map([['artist-1', 'artist' as ItemType]]),
+        '/mnt/usb',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      const artistDiff = result.items[0];
+      const pathChanged = artistDiff.changes.filter(c => c.changeType === 'path_changed');
+      const unchanged = artistDiff.changes.filter(c => c.changeType === 'unchanged');
+
+      // With the fix using both synced.serverRootPath AND synced.serverPath:
+      // synced.serverRootPath='/music/lib/lib/', serverPath='/music/lib/lib/Artist/Old Album/track1.mp3'
+      // rootPathForDiff = synced.serverRootPath = '/music/lib/lib/'
+      // serverRelativePath = 'Artist/Old Album/'
+      // outputDir = /mnt/usb/Artist/Old Album (correct!)
+      // expected = /mnt/usb/Artist/Old Album/track1.mp3 ✓
+      // So old tracks stay unchanged despite library reorganisation
+      expect(pathChanged).toHaveLength(0); // FIXED: no false path_changed
+      expect(unchanged).toHaveLength(2);   // FIXED: old tracks correctly marked unchanged
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // analyzeDiff: H2 — itemErrors on API failure
+  // ---------------------------------------------------------------------------
+  describe('analyzeDiff item-level errors', () => {
+    it('includes failed items in itemErrors when API call fails', async () => {
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/',
+      };
+
+      vi.mocked(getSyncedTracksForItem).mockReturnValue([]);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({
+          getTracksForItems: async () => ({
+            tracks: [],
+            errors: ['Failed to fetch album album-fail: Connection refused'],
+          }),
+        }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['album-fail'],
+        new Map([['album-fail', 'album' as ItemType]]),
+        '/music',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      expect(result.itemErrors).toBeDefined();
+      expect(result.itemErrors!.length).toBeGreaterThan(0);
+      expect(result.itemErrors![0].itemId).toBe('album-fail');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // analyzeDiff: Legacy NULL serverRootPath — no false path_changed
+  // ---------------------------------------------------------------------------
+  describe('analyzeDiff legacy NULL serverRootPath', () => {
+    it('marks tracks as unchanged when serverRootPath is NULL (v1→v2 migration)', async () => {
+      const configNoRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '', // auto-detection will be used
+      };
+
+      // Server returns deep-path tracks (5+ components) so detection succeeds
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            { id: 'track-1', name: 'Track 1', album: 'Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Album/track1.mp3', format: 'mp3', parentItemId: 'album-1' },
+            { id: 'track-2', name: 'Track 2', album: 'Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Album/track2.mp3', format: 'mp3', parentItemId: 'album-1' },
+          ],
+          errors: [],
+        })
+      );
+
+      // Legacy synced records from v1 sync: serverRootPath = NULL, serverPath = NULL
+      // These records cannot be path-compared reliably since we don't know what
+      // root was in effect at original sync time.
+      // Hashes computed from: { title: 'Track 1/2', artist: 'Artist', album: 'Album' }
+      const metadataHash1 = '1d68c7ded0780462';
+      const metadataHash2 = 'cea9f581fa108bca';
+
+      mockGetSyncedTracksForItem.mockReturnValue([
+        {
+          trackId: 'track-1',
+          itemId: 'album-1',
+          destinationPath: '/mnt/usb/Artist/Album/track1.mp3', // v1 stored full relative path
+          fileSize: 5000000,
+          metadataHash: metadataHash1,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: null,    // legacy: never stored
+          serverRootPath: null, // legacy: NULL from v1 migration
+        },
+        {
+          trackId: 'track-2',
+          itemId: 'album-1',
+          destinationPath: '/mnt/usb/Artist/Album/track2.mp3',
+          fileSize: 5000000,
+          metadataHash: metadataHash2,
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: null,    // legacy: never stored
+          serverRootPath: null, // legacy: NULL from v1 migration
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configNoRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['album-1'],
+        new Map([['album-1', 'album' as ItemType]]),
+        '/mnt/usb',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      expect(result.items).toHaveLength(1);
+      const albumDiff = result.items[0];
+
+      // Tracks with NULL serverRootPath must be marked unchanged (not path_changed),
+      // regardless of whether the expected path computed by current detectServerRootPath
+      // matches the legacy stored destinationPath.
+      const unchanged = albumDiff.changes.filter(c => c.changeType === 'unchanged');
+      const pathChanged = albumDiff.changes.filter(c => c.changeType === 'path_changed');
+      expect(unchanged).toHaveLength(2);
+      expect(pathChanged).toHaveLength(0);
+    });
+
+    it('still detects path_changed when serverRootPath is non-null (v2 re-sync)', async () => {
+      const configWithServerRoot: SyncConfig = {
+        ...validConfig,
+        serverRootPath: '/music/lib/lib/',
+      };
+
+      const getTracksForItemsSpy = vi.fn(() =>
+        Promise.resolve({
+          tracks: [
+            { id: 'track-1', name: 'Track 1', album: 'Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Album/track1.mp3', format: 'mp3', parentItemId: 'album-1' },
+          ],
+          errors: [],
+        })
+      );
+
+      // v2 synced record with stored serverRootPath — path comparison should work
+      // Hash computed from: { title: 'Track 1', artist: 'Artist', album: 'Album' }
+      mockGetSyncedTracksForItem.mockReturnValue([
+        {
+          trackId: 'track-1',
+          itemId: 'album-1',
+          destinationPath: '/mnt/usb/Artist/Album/track1.mp3', // correct expected path
+          fileSize: 5000000,
+          metadataHash: '1d68c7ded0780462',
+          coverArtMode: 'embed',
+          encodedBitrate: '192k',
+          serverPath: '/music/lib/lib/Artist/Album/track1.mp3',
+          serverRootPath: '/music/lib/lib/', // stored at sync time (v2)
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+
+      const deps = createMockDeps({
+        api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+      });
+
+      const core = createTestSyncCore(configWithServerRoot, deps);
+
+      const result = await core.analyzeDiff(
+        ['album-1'],
+        new Map([['album-1', 'album' as ItemType]]),
+        '/mnt/usb',
+        { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+      );
+
+      const albumDiff = result.items[0];
+      const unchanged = albumDiff.changes.filter(c => c.changeType === 'unchanged');
+      // Path should match → unchanged
+      expect(unchanged).toHaveLength(1);
+    });
+  });
+});
+
+// =============================================================================
+// detectServerRootPath TESTS
+// =============================================================================
+describe('detectServerRootPath', () => {
+  it('filters out shallow paths and returns common root from valid candidates', async () => {
+    const { detectServerRootPath } = await import('./sync-api');
+
+    const tracks = [
+      // Deep paths — valid candidates
+      { id: '1', name: 'Track 1', path: '/mediamusic/lib/lib/Artist1/Album/track1.mp3' },
+      { id: '2', name: 'Track 2', path: '/mediamusic/lib/lib/Artist2/Album/track2.mp3' },
+      // Shallow path — would return '' from map, must be filtered out
+      { id: '3', name: 'Track 3', path: '/music/track.mp3' },
+    ];
+
+    const result = detectServerRootPath(tracks);
+    // Algorithm drops 4 levels (filename + album + artist + library_name).
+    // /mediamusic/lib/lib/Artist1/Album/track1.mp3 → /mediamusic/lib/
+    // Shallow track (/music/track.mp3) is filtered out and does not affect the result.
+    expect(result).toBe('/mediamusic/lib/');
+  });
+
+  it('returns empty string when all tracks are too shallow', async () => {
+    const { detectServerRootPath } = await import('./sync-api');
+
+    const tracks = [
+      { id: '1', name: 'Track 1', path: '/track.mp3' },
+      { id: '2', name: 'Track 2', path: '/music/track.mp3' },
+    ];
+
+    const result = detectServerRootPath(tracks);
+    expect(result).toBe('');
+  });
+});
+
+// =============================================================================
+// analyzeDiff: v1→v2 retrocompatibility (JELLY-0053)
+// Items synced with v1 (in synced_files) but no track records (synced_tracks)
+// must not appear as "out of sync" due to new tracks in the diff engine.
+// =============================================================================
+
+describe('analyzeDiff v1→v2 retrocompatibility', () => {
+  it('marks all tracks as unchanged when item is v1-synced (in synced_files, no synced_tracks)', async () => {
+    // Item was synced with v1: present in getSyncedItems() but absent from getSyncedTracksForItem()
+    mockGetSyncedItems.mockReturnValue([
+      { id: 'artist-1', name: 'Artist One', type: 'artist' },
+    ]);
+    // No track-level records for this item (v1 never wrote synced_tracks)
+    mockGetSyncedTracksForItem.mockReturnValue([]);
+
+    const getTracksForItemsSpy = vi.fn(() =>
+      Promise.resolve({
+        tracks: [
+          { id: 'track-1', name: 'Track 1', album: 'Album', artists: ['Artist One'], path: '/music/lib/lib/Artist One/Album/track1.mp3', format: 'mp3', parentItemId: 'artist-1' },
+          { id: 'track-2', name: 'Track 2', album: 'Album', artists: ['Artist One'], path: '/music/lib/lib/Artist One/Album/track2.mp3', format: 'mp3', parentItemId: 'artist-1' },
+        ],
+        errors: [],
+      })
+    );
+
+    const deps = createMockDeps({
+      api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+    });
+    const core = createTestSyncCore(validConfig, deps);
+
+    const result = await core.analyzeDiff(
+      ['artist-1'],
+      new Map([['artist-1', 'artist' as ItemType]]),
+      '/mnt/usb',
+      { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+    );
+
+    expect(result.items).toHaveLength(1);
+    const diff = result.items[0];
+
+    // All tracks must be unchanged — no false "new" for v1 items
+    const unchanged = diff.changes.filter(c => c.changeType === 'unchanged');
+    const newTracks = diff.changes.filter(c => c.changeType === 'new');
+    expect(unchanged).toHaveLength(2);
+    expect(newTracks).toHaveLength(0);
+    expect(diff.summary.new).toBe(0);
+    expect(diff.summary.unchanged).toBe(2);
+
+    // The sub-items check in useDeviceSelections must NOT see newTracks > 0
+    // (this is what caused the false "out of sync" display)
+    if (diff.subItems) {
+      for (const sub of diff.subItems) {
+        expect(sub.summary.newTracks).toBe(0);
+      }
+    }
+  });
+
+  it('still marks tracks as new for items not in synced_files at all', async () => {
+    // Item has never been synced: absent from both getSyncedItems() and getSyncedTracksForItem()
+    mockGetSyncedItems.mockReturnValue([]);
+    mockGetSyncedTracksForItem.mockReturnValue([]);
+
+    const getTracksForItemsSpy = vi.fn(() =>
+      Promise.resolve({
+        tracks: [
+          { id: 'track-1', name: 'Track 1', album: 'Album', artists: ['Artist'], path: '/music/lib/lib/Artist/Album/track1.mp3', format: 'mp3', parentItemId: 'artist-1' },
+        ],
+        errors: [],
+      })
+    );
+
+    const deps = createMockDeps({
+      api: createMockApiClient({ getTracksForItems: getTracksForItemsSpy }),
+    });
+    const core = createTestSyncCore(validConfig, deps);
+
+    const result = await core.analyzeDiff(
+      ['artist-1'],
+      new Map([['artist-1', 'artist' as ItemType]]),
+      '/mnt/usb',
+      { coverArtMode: 'embed', bitrate: '192k', convertToMp3: false }
+    );
+
+    expect(result.items).toHaveLength(1);
+    const newTracks = result.items[0].changes.filter(c => c.changeType === 'new');
+    expect(newTracks).toHaveLength(1);
+    expect(result.items[0].summary.new).toBe(1);
+  });
+});
+
+// =============================================================================
+// Sync healing: skip paths must write synced_tracks for v1→v2 migration
+// When a track is skipped because the file already exists (no prior DB record),
+// upsertSyncedTrack must be called to populate synced_tracks.
+// =============================================================================
+
+describe('sync loop healing on skip', () => {
+  it('writes synced_tracks record when file exists at expected path with matching size (no prior record)', async () => {
+    const deps = createMockDeps();
+
+    // No existing synced_tracks records for this device
+    vi.mocked(getSyncedTracksForDevice).mockReturnValue([]);
+
+    // Simulate file already on disk at the expected path (v1 sync placed it there)
+    const mockFs = deps.fs as any;
+    mockFs.__setFile('/mnt/usb/Artist One/Album One/Track One.mp3', Buffer.alloc(5000000));
+
+    const core = createTestSyncCore(validConfig, deps);
+
+    const itemTypes = new Map<string, ItemType>([['album-1', 'album']]);
+    await core.sync(
+      { itemIds: ['album-1'], itemTypes, destinationPath: '/mnt/usb' },
+      () => {}
+    );
+
+    // upsertSyncedTrack must have been called to record the skipped track
+    expect(vi.mocked(upsertSyncedTrack)).toHaveBeenCalled();
   });
 });

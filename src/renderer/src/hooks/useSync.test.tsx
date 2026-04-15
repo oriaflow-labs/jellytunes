@@ -1,0 +1,266 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
+import { useSync } from './useSync'
+import type { Artist, Album, Playlist } from '../appTypes'
+import type { SyncedItemInfo } from './useDeviceSelections'
+
+const mockArtists: Artist[] = [
+  { Id: 'artist-1', Name: 'The Beatles', AlbumCount: 13, ImageTags: {} },
+]
+const mockAlbums: Album[] = [
+  { Id: 'album-1', Name: 'Abbey Road', AlbumArtist: 'The Beatles', ProductionYear: 1969, ImageTags: {} },
+]
+const mockPlaylists: Playlist[] = [
+  { Id: 'playlist-1', Name: 'My Favorites', ChildCount: 10, ImageTags: {} },
+]
+
+const defaultProps = {
+  jellyfinConfig: { url: 'https://jellyfin.test', apiKey: 'test-key' },
+  userId: 'user-1',
+  selectedTracks: new Set<string>(),
+  previouslySyncedItems: new Set<string>(),
+  syncedItemsInfo: [] as SyncedItemInfo[],
+  artists: mockArtists,
+  albums: mockAlbums,
+  playlists: mockPlaylists,
+  setPreviouslySyncedItems: vi.fn(),
+  cachedEstimatedSizeBytes: null as number | null,
+  revalidateDevice: vi.fn().mockResolvedValue(undefined),
+}
+
+const createMockApi = (overrides?: Record<string, ReturnType<typeof vi.fn>>) => ({
+  selectFolder: vi.fn().mockResolvedValue('/Volumes/USB'),
+  estimateSize: vi.fn().mockResolvedValue({ trackCount: 5, totalBytes: 1_000_000, formatBreakdown: { mp3: 1_000_000 } }),
+  getSyncedItems: vi.fn().mockResolvedValue([]),
+  startSync2: vi.fn().mockResolvedValue({ success: true, tracksCopied: 5, tracksFailed: [], errors: [], tracksSkipped: 0 }),
+  removeItems: vi.fn().mockResolvedValue({ removed: 0, errors: [] }),
+  cancelSync: vi.fn().mockResolvedValue({ cancelled: true }),
+  onSyncProgress: vi.fn().mockReturnValue(() => {}),
+  ...overrides,
+})
+
+let mockApi: ReturnType<typeof createMockApi>
+
+beforeEach(() => {
+  mockApi = createMockApi()
+  Object.defineProperty(window, 'api', { value: mockApi, writable: true })
+  vi.stubGlobal('alert', vi.fn())
+  vi.clearAllMocks()
+})
+
+describe('useSync', () => {
+  describe('handleStartSync', () => {
+    it('does nothing without a device selected', async () => {
+      const propsWithoutDevice = { ...defaultProps, jellyfinConfig: null }
+      const { result } = renderHook(() => useSync(propsWithoutDevice))
+
+      await act(async () => {
+        await result.current.handleStartSync()
+      })
+
+      expect(mockApi.startSync2).not.toHaveBeenCalled()
+    })
+
+    it('calls estimateSize and shows preview when items are selected', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1', 'album-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.handleStartSync()
+      })
+
+      expect(mockApi.estimateSize).toHaveBeenCalled()
+      expect(result.current.showPreview).toBe(true)
+      expect(result.current.previewData).not.toBeNull()
+    })
+  })
+
+  describe('executeSyncNow', () => {
+    it('calls removeItems if there are items to delete', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set<string>(),
+        previouslySyncedItems: new Set(['album-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      // Set sync folder via the hook's internal state
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(mockApi.removeItems).toHaveBeenCalled()
+    })
+
+    it('calls startSync2 with correct IDs and options', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1', 'album-1']),
+        previouslySyncedItems: new Set<string>(),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(mockApi.startSync2).toHaveBeenCalledTimes(1)
+      const syncCall = mockApi.startSync2.mock.calls[0][0]
+      expect(syncCall.serverUrl).toBe('https://jellyfin.test')
+      expect(syncCall.apiKey).toBe('test-key')
+      expect(syncCall.userId).toBe('user-1')
+      expect(syncCall.destinationPath).toBe('/Volumes/USB')
+    })
+  })
+
+  describe('onSyncProgress', () => {
+    it('sets isSyncing to true during sync and clears after completion', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      // Capture isSyncing before and during sync
+      expect(result.current.isSyncing).toBe(false)
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(result.current.isSyncing).toBe(false)
+      expect(result.current.syncSuccessData).not.toBeNull()
+    })
+  })
+
+  describe('handleCancelSync', () => {
+    it('calls cancelSync and sets isCancelling', async () => {
+      let progressCallback: (progress: {
+        current: number
+        total: number
+        currentFile: string
+        status: string
+        phase: string
+        bytesProcessed: number
+        totalBytes: number
+      }) => void = () => {}
+
+      mockApi.onSyncProgress.mockImplementation((cb: typeof progressCallback) => {
+        progressCallback = cb
+        return () => {}
+      })
+
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      act(() => {
+        progressCallback({
+          current: 2,
+          total: 5,
+          currentFile: 'track2.mp3',
+          status: 'syncing',
+          phase: 'copying',
+          bytesProcessed: 2_000_000,
+          totalBytes: 5_000_000,
+        })
+      })
+
+      await act(async () => {
+        await result.current.handleCancelSync()
+      })
+
+      expect(mockApi.cancelSync).toHaveBeenCalled()
+    })
+  })
+
+  describe('post-sync', () => {
+    it('calls getSyncedItems to refresh cache after sync', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(mockApi.getSyncedItems).toHaveBeenCalledWith('/Volumes/USB')
+    })
+  })
+
+  describe('sync success', () => {
+    it('populates syncSuccessData on successful sync', async () => {
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1']),
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(result.current.syncSuccessData).not.toBeNull()
+      expect(result.current.syncSuccessData?.tracksCopied).toBe(5)
+    })
+
+    it('calls revalidateDevice after successful sync to update out-of-sync indicators', async () => {
+      const revalidateDevice = vi.fn().mockResolvedValue(undefined)
+      const props = {
+        ...defaultProps,
+        selectedTracks: new Set(['artist-1']),
+        revalidateDevice,
+      }
+      const { result } = renderHook(() => useSync(props))
+
+      await act(async () => {
+        await result.current.handleSelectSyncFolder('/Volumes/USB')
+      })
+
+      await act(async () => {
+        await result.current.executeSyncNow()
+      })
+
+      expect(revalidateDevice).toHaveBeenCalled()
+    })
+  })
+})
