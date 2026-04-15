@@ -1,16 +1,18 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { spawn, spawnSync } from 'child_process'
+import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 
 // Import new sync module
-import { createSyncCore, createValidatedConfig, validateDestination, createNodeFileSystem } from '../sync'
-import { resolveFFmpegPath } from '../sync/ffmpeg-path'
+import { createSyncCore, CoverArtMode } from '../sync'
 
 // Import database
-import { initDatabase, recordSyncCompleted, getSyncedItemIds, getSyncedItems, getDeviceSyncInfo, getRecentSyncHistory, removeSyncedItems } from './database'
+import { initDatabase, recordSyncCompleted, getSyncedItems, getDeviceSyncInfo, getRecentSyncHistory, removeSyncedItems, clearDestinationRecords } from './database'
+
+// Import preferences
+import { getPreferences, setPreferences } from './preferences'
 
 // Configure logger before anything else
 import { configureLogger, log } from './logger'
@@ -18,6 +20,9 @@ configureLogger()
 log.info('JellyTunes starting...')
 
 let mainWindow: BrowserWindow | null = null
+
+// Import device watcher
+import { startDeviceWatcher, stopDeviceWatcher } from './device-watcher'
 
 interface UsbDevice {
   device: string
@@ -217,18 +222,6 @@ function detectAudioFormat(filePath: string): string {
 
 import * as path from 'path'
 
-async function convertTrackToMp3(inputPath: string, outputPath: string, bitrate: string): Promise<boolean> {
-  return new Promise<boolean>((resolve: (value: boolean) => void) => {
-    try {
-      const ffmpegPath = resolveFFmpegPath()
-      const args = ['-i', inputPath, '-ab', bitrate, '-ar', '44100', '-ac', '2', '-y', outputPath]
-      const ffmpegProcess = spawn(ffmpegPath, args, { stdio: 'ignore' })
-      ffmpegProcess.on('error', (err) => { log.error('FFmpeg error:', err); resolve(false) })
-      ffmpegProcess.on('close', (code) => { resolve(code === 0) })
-    } catch (error) { log.error('Conversion error:', error); resolve(false) }
-  })
-}
-
 let isSyncCancelled = false
 let activeSyncCore: import('../sync').SyncCore | null = null
 
@@ -310,7 +303,7 @@ async function downloadFromJellyfin(trackId: string, outputPath: string, serverU
 }
 
 async function syncTracks(options: { tracks: Array<{ id: string; name: string; path: string; size: number; format: string }>; targetPath: string; convertToMp3: boolean; mp3Bitrate: string; serverUrl?: string; apiKey?: string; onProgress: (progress: { current: number; total: number; currentFile: string; status: string }) => void }): Promise<{ success: boolean; errors: string[]; syncedFiles: number }> {
-  const { tracks, targetPath, convertToMp3, mp3Bitrate, serverUrl, apiKey, onProgress } = options
+  const { tracks, targetPath, convertToMp3: _convertToMp3, mp3Bitrate: _mp3Bitrate, serverUrl: _serverUrl, apiKey: _apiKey, onProgress } = options
   const errors: string[] = []
   let syncedFiles = 0
   isSyncCancelled = false
@@ -325,7 +318,7 @@ async function syncTracks(options: { tracks: Array<{ id: string; name: string; p
       let outputPathFull: string
       
       // Use Jellyfin download endpoint if serverUrl is provided
-      if (serverUrl && apiKey) {
+      if (_serverUrl && _apiKey) {
         // Preserve server folder structure - replace server root with target path
         // Example: /mediamusic/lib/lib/4 Strings/Album/track.flac -> /target/lib/lib/4 Strings/Album/track.flac
         const serverRoot = extractServerRoot(track.path)
@@ -349,7 +342,7 @@ async function syncTracks(options: { tracks: Array<{ id: string; name: string; p
         }
         
         // Download from Jellyfin server
-        const downloaded = await downloadFromJellyfin(track.id, outputPathFull, serverUrl, apiKey)
+        const downloaded = await downloadFromJellyfin(track.id, outputPathFull, _serverUrl, _apiKey)
         if (!downloaded) {
           errors.push(`Failed to download: ${track.name}`)
           continue
@@ -397,6 +390,9 @@ function createWindow(): void {
     }
   })
   mainWindow.on('ready-to-show', () => { mainWindow?.show(); log.info('Window ready') })
+  mainWindow.webContents.on('did-finish-load', async () => {
+    if (mainWindow) await startDeviceWatcher(mainWindow, listUsbDevices)
+  })
   mainWindow.webContents.setWindowOpenHandler((details) => { shell.openExternal(details.url); return { action: 'deny' } })
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
   if (is.dev && rendererUrl) { mainWindow.loadURL(rendererUrl) } else { mainWindow.loadFile(join(__dirname, '../renderer/index.html')) }
@@ -531,7 +527,7 @@ ipcMain.handle('device:getFilesystem', async (_event, devicePath: string) => {
   if (!isValidPath(devicePath)) { log.warn('device:getFilesystem: invalid path', devicePath); return 'unknown' }
   try { return await detectFilesystem(devicePath) } catch (e) { return 'unknown' }
 })
-ipcMain.handle('sync:start', async (event, options) => {
+ipcMain.handle('sync:start', async (_event, options) => {
   try {
     log.info(`Starting sync to ${options.targetPath} with ${options.tracks.length} tracks`)
     const result = await syncTracks({
@@ -548,7 +544,7 @@ ipcMain.handle('sync:start', async (event, options) => {
 })
 
 // New sync:start2 handler - uses SyncCore for proper path resolution
-ipcMain.handle('sync:start2', async (event, options) => {
+ipcMain.handle('sync:start2', async (_event, options) => {
   try {
     const { serverUrl, apiKey, userId, itemIds, itemTypes, itemNames = {}, destinationPath, options: syncOptions = {} } = options
     log.info(`Starting sync v2 to ${destinationPath} with ${itemIds.length} items`)
@@ -562,7 +558,7 @@ ipcMain.handle('sync:start2', async (event, options) => {
     if (!fs.existsSync(destinationPath)) {
       fs.mkdirSync(destinationPath, { recursive: true })
     }
-    
+
     // Create SyncCore instance with proper configuration
     const syncCore = createSyncCore(
       {
@@ -600,6 +596,7 @@ ipcMain.handle('sync:start2', async (event, options) => {
           skipExisting: true,
           filesystemType,
           ...syncOptions,
+          embedMetadata: true, // always embed metadata - never skip tagging
         },
       },
       // Progress callback - map SyncCore format to renderer format
@@ -614,6 +611,10 @@ ipcMain.handle('sync:start2', async (event, options) => {
           total: progress.total,
           currentFile: progress.currentTrack || '',
           status,
+          phase: progress.phase,
+          bytesProcessed: progress.bytesProcessed,
+          totalBytes: progress.totalBytes,
+          warning: progress.warning,
         })
       }
     )
@@ -636,6 +637,7 @@ ipcMain.handle('sync:start2', async (event, options) => {
       success: result.success,
       tracksCopied: result.tracksCopied,
       tracksSkipped: result.tracksSkipped,
+      tracksRetagged: result.tracksRetagged,
       tracksFailed: result.tracksFailed,
       errors: result.errors,
       totalSizeBytes: result.totalSizeBytes,
@@ -644,6 +646,23 @@ ipcMain.handle('sync:start2', async (event, options) => {
     activeSyncCore = null
     log.error('Sync v2 error:', error);
     return { success: false, errors: [error instanceof Error ? error.message : String(error)], tracksCopied: 0 }
+  }
+})
+ipcMain.handle('sync:analyzeDiff', async (_event, options: {
+  serverUrl: string; apiKey: string; userId: string
+  itemIds: string[]; itemTypes: Record<string, 'artist' | 'album' | 'playlist'>
+  destinationPath: string
+  options: { coverArtMode: CoverArtMode; bitrate: '128k' | '192k' | '320k'; convertToMp3: boolean }
+}) => {
+  try {
+    const { serverUrl, apiKey, userId, itemIds, itemTypes, destinationPath, options: diffOptions } = options
+    const syncCore = createSyncCore({ serverUrl: serverUrl.replace(/\/$/, ''), apiKey, userId })
+    const itemTypesMap = new Map(Object.entries(itemTypes))
+    const result = await syncCore.analyzeDiff(itemIds, itemTypesMap, destinationPath, diffOptions)
+    return { success: true, ...result }
+  } catch (error) {
+    log.error('sync:analyzeDiff error:', error)
+    return { success: false, items: [], totals: { newTracks: 0, metadataChanged: 0, removed: 0, pathChanged: 0, unchanged: 0 }, errors: [error instanceof Error ? error.message : String(error)] }
   }
 })
 ipcMain.handle('sync:cancel', () => { cancelSync(); return { cancelled: true } })
@@ -659,20 +678,23 @@ ipcMain.handle('ffmpeg:isAvailable', async () => { try { require('child_process'
 ipcMain.handle('sync:estimateSize', async (_event, options: {
   serverUrl: string; apiKey: string; userId: string
   itemIds: string[]; itemTypes: Record<string, 'artist' | 'album' | 'playlist'>
+  convertToMp3?: boolean; bitrate?: string; syncedIds?: string[]
 }) => {
   try {
-    const { serverUrl, apiKey, userId, itemIds, itemTypes } = options
+    const { serverUrl, apiKey, userId, itemIds, itemTypes, convertToMp3, bitrate, syncedIds } = options
     const core = createSyncCore({ serverUrl: serverUrl.replace(/\/$/, ''), apiKey, userId })
     const itemTypesMap = new Map(Object.entries(itemTypes)) as Map<string, 'artist' | 'album' | 'playlist'>
-    const estimate = await core.estimateSize(itemIds, itemTypesMap)
+    const estimate = await core.estimateSize(itemIds, itemTypesMap, { convertToMp3, bitrate, syncedIds: syncedIds ? new Set(syncedIds) : undefined })
     return {
       trackCount: estimate.trackCount,
       totalBytes: estimate.totalBytes,
       formatBreakdown: Object.fromEntries(estimate.formatBreakdown),
+      syncedMusicBytes: estimate.syncedMusicBytes,
+      newMusicBytes: estimate.newMusicBytes,
     }
   } catch (error) {
     log.error('estimateSize error:', error)
-    return { trackCount: 0, totalBytes: 0, formatBreakdown: {} }
+    return { trackCount: 0, totalBytes: 0, formatBreakdown: {}, syncedMusicBytes: 0, newMusicBytes: 0 }
   }
 })
 
@@ -715,18 +737,51 @@ ipcMain.handle('sync:removeItems', async (_event, options: {
   }
 })
 
-// Update checker — queries GitHub API at most once per 24h, no telemetry
+// Clear all synced items and optionally delete files for a destination
+ipcMain.handle('sync:clearDestination', async (_event, options: {
+  serverUrl: string; apiKey: string; userId: string; destinationPath: string
+}) => {
+  const { serverUrl, apiKey, userId, destinationPath } = options
+  try {
+    const core = createSyncCore(
+      { serverUrl: serverUrl.replace(/\/$/, ''), apiKey, userId },
+      { logger: { info: (m) => log.info('[sync]', m), warn: (m) => log.warn('[sync]', m), error: (m) => log.error('[sync]', m), debug: (m) => log.debug('[sync]', m) } }
+    )
+    const syncedItems = getSyncedItems(destinationPath)
+    if (syncedItems.length === 0) {
+      clearDestinationRecords(destinationPath)
+      return { deleted: 0, errors: [] }
+    }
+    const allIds = syncedItems.map(i => i.id)
+    const itemTypesMap = new Map(syncedItems.map(i => [i.id, i.type])) as Map<string, 'artist' | 'album' | 'playlist'>
+    const result = await core.removeItems(allIds, itemTypesMap, destinationPath)
+    log.info(`clearDestination: removed ${result.removed} files, ${result.errors.length} errors`)
+    clearDestinationRecords(destinationPath)
+    return { deleted: result.removed, errors: result.errors }
+  } catch (error) {
+    log.error('clearDestination error:', error)
+    return { deleted: 0, errors: [error instanceof Error ? error.message : String(error)] }
+  }
+})
+
+// Update checker — queries analytics worker at most once per 24h
+const UPDATE_CHECKER_URL = 'https://api.oriaflow.dev/jellytunes/updates/latest'
 let lastUpdateCheck = 0
 let cachedUpdateInfo: { updateAvailable: boolean; latestVersion: string; releaseUrl: string } | null = null
 
-ipcMain.handle('app:checkForUpdates', async (_event, force = false) => {
+async function performUpdateCheck(force = false): Promise<{ updateAvailable: boolean; latestVersion: string; releaseUrl: string }> {
   const now = Date.now()
   const ONE_DAY_MS = 24 * 60 * 60 * 1000
   if (!force && cachedUpdateInfo && now - lastUpdateCheck < ONE_DAY_MS) return cachedUpdateInfo
   try {
     const { net } = await import('electron')
-    const request = net.fetch('https://api.github.com/repos/oriaflow-labs/jellytunes/releases/latest', {
-      headers: { 'User-Agent': `JellyTunes/${app.getVersion()}`, 'Accept': 'application/vnd.github+json' }
+    const { analyticsEnabled } = getPreferences()
+    const request = net.fetch(UPDATE_CHECKER_URL, {
+      headers: {
+        'User-Agent': `JellyTunes/${app.getVersion()} (${process.platform}; ${process.arch})`,
+        'Accept': 'application/vnd.github+json',
+        ...(analyticsEnabled ? {} : { 'X-JT-Analytics-Opt-Out': '1' })
+      }
     })
     const data = await (await request).json() as { tag_name?: string; html_url?: string }
     const latestVersion = (data.tag_name ?? '').replace(/^v/, '')
@@ -738,7 +793,15 @@ ipcMain.handle('app:checkForUpdates', async (_event, force = false) => {
   } catch {
     return { updateAvailable: false, latestVersion: '', releaseUrl: '' }
   }
+}
+
+// Preferences IPC handlers
+ipcMain.handle('prefs:get', () => getPreferences())
+ipcMain.handle('prefs:set', (_event, partial: { analyticsEnabled?: boolean }) => {
+  setPreferences(partial)
 })
+
+ipcMain.handle('app:checkForUpdates', (_event, force = false) => performUpdateCheck(force))
 
 app.whenReady().then(() => {
   log.info('App ready')
@@ -747,7 +810,11 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => { optimizer.watchWindowShortcuts(window) })
   createWindow()
   app.on('activate', function () { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+
+  // Fire update check every 24h even if app stays open for days
+  setInterval(() => { void performUpdateCheck(true) }, 24 * 60 * 60 * 1000)
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') { app.quit() } })
+app.on('before-quit', () => { stopDeviceWatcher() })
 log.info('Main process initialized')

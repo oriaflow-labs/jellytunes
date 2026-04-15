@@ -43,6 +43,10 @@ interface SyncProgress {
   total: number
   currentFile: string
   status: 'syncing' | 'completed' | 'cancelled'
+  phase?: string
+  bytesProcessed?: number
+  totalBytes?: number
+  warning?: string
 }
 
 const api = {
@@ -62,13 +66,15 @@ const api = {
     ipcRenderer.invoke('usb:getTrackFormat', trackPath),
   
   onUsbAttach: (callback: () => void) => {
-    ipcRenderer.on('usb:attach', () => callback())
-    return () => ipcRenderer.removeAllListeners('usb:attach')
+    const handler = () => callback()
+    ipcRenderer.on('usb:attach', handler)
+    return () => ipcRenderer.removeListener('usb:attach', handler)
   },
-  
+
   onUsbDetach: (callback: () => void) => {
-    ipcRenderer.on('usb:detach', () => callback())
-    return () => ipcRenderer.removeAllListeners('usb:detach')
+    const handler = () => callback()
+    ipcRenderer.on('usb:detach', handler)
+    return () => ipcRenderer.removeListener('usb:detach', handler)
   },
 
   startSync: (options: SyncOptions): Promise<SyncResult> =>
@@ -113,7 +119,8 @@ const api = {
   estimateSize: (options: {
     serverUrl: string; apiKey: string; userId: string
     itemIds: string[]; itemTypes: Record<string, 'artist' | 'album' | 'playlist'>
-  }): Promise<{ trackCount: number; totalBytes: number; formatBreakdown: Record<string, number> }> =>
+    convertToMp3?: boolean; bitrate?: string; syncedIds?: string[]
+  }): Promise<{ trackCount: number; totalBytes: number; formatBreakdown: Record<string, number>; syncedMusicBytes: number; newMusicBytes: number }> =>
     ipcRenderer.invoke('sync:estimateSize', options),
 
   getDeviceSyncInfo: (mountPoint: string): Promise<{
@@ -130,12 +137,26 @@ const api = {
   getSyncedItems: (mountPoint: string): Promise<Array<{ id: string; name: string; type: 'artist' | 'album' | 'playlist' }>> =>
     ipcRenderer.invoke('sync:getSyncedItems', mountPoint),
 
+  analyzeDiff: (options: {
+    serverUrl: string; apiKey: string; userId: string
+    itemIds: string[]; itemTypes: Record<string, 'artist' | 'album' | 'playlist'>
+    destinationPath: string
+    options: { convertToMp3: boolean; bitrate: '128k' | '192k' | '320k'; coverArtMode: 'off' | 'embed' | 'separate' }
+  }): Promise<{ success: boolean; items: Array<{ itemId: string; itemName: string; itemType: string; changes: Array<{ trackId: string; trackName: string; changeType: string }>; summary: { new: number; metadataChanged: number; removed: number; pathChanged: number; unchanged: number } }>; totals: { newTracks: number; metadataChanged: number; removed: number; pathChanged: number; unchanged: number }; errors?: string[] }> =>
+    ipcRenderer.invoke('sync:analyzeDiff', options),
+
   removeItems: (options: {
     serverUrl: string; apiKey: string; userId: string
     itemIds: string[]; itemTypes: Record<string, 'artist' | 'album' | 'playlist'>
     destinationPath: string
   }): Promise<{ removed: number; errors: string[] }> =>
     ipcRenderer.invoke('sync:removeItems', options),
+
+  clearDestination: (options: {
+    serverUrl: string; apiKey: string; userId: string
+    destinationPath: string
+  }): Promise<{ deleted: number; errors: string[] }> =>
+    ipcRenderer.invoke('sync:clearDestination', options),
 
   saveSession: (data: string): Promise<void> =>
     ipcRenderer.invoke('session:save', data),
@@ -161,6 +182,12 @@ const api = {
   // Pass force=true to bypass the cache (e.g. manual check button)
   checkForUpdates: (force?: boolean): Promise<{ updateAvailable: boolean; latestVersion: string; releaseUrl: string }> =>
     ipcRenderer.invoke('app:checkForUpdates', force ?? false),
+
+  // Preferences
+  getPreferences: (): Promise<{ analyticsEnabled: boolean }> =>
+    ipcRenderer.invoke('prefs:get'),
+  setPreferences: (prefs: { analyticsEnabled?: boolean }): Promise<void> =>
+    ipcRenderer.invoke('prefs:set', prefs),
 }
 
 if (process.contextIsolated) {
