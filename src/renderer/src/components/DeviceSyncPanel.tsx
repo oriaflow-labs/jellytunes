@@ -275,8 +275,8 @@ export function DeviceSyncPanel({
                 </span>
               )}
               {estimatedSizeBytes != null && estimatedSizeBytes > 0 && (
-                <span className="flex items-center gap-1 text-primary">
-                  <span className="w-2 h-2 rounded-sm bg-primary_container border border-primary" />
+                <span className={`flex items-center gap-1 text-primary transition-opacity duration-300 ${isLoadingPreview ? 'opacity-40' : 'opacity-100'}`}>
+                  <span className={`w-2 h-2 rounded-sm bg-primary_container border border-primary inline-block ${isLoadingPreview ? 'animate-sizeSquarePulse' : ''}`} />
                   {formatBytes(estimatedSizeBytes)} Selected
                 </span>
               )}

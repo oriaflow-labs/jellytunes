@@ -33,9 +33,14 @@ export default {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(100%)' },
         },
+        sizeSquarePulse: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(0.55)' },
+        },
       },
       animation: {
         shimmer: 'shimmer 1.5s ease-in-out infinite',
+        sizeSquarePulse: 'sizeSquarePulse 0.8s ease-in-out infinite',
       },
     }
   },
