@@ -84,6 +84,7 @@ function App(): JSX.Element {
     selectedTracks: deviceSelections.selectedTracks,
     previouslySyncedItems: deviceSelections.previouslySyncedItems,
     syncedItemsInfo: deviceSelections.syncedItemsInfo,
+    outOfSyncItems: deviceSelections.outOfSyncItems,
     artists: extArtists,
     albums: extAlbums,
     playlists: extPlaylists,
@@ -349,7 +350,6 @@ function App(): JSX.Element {
                 convertToMp3={sync.convertToMp3}
                 bitrate={sync.bitrate}
                 isSyncing={sync.isSyncing}
-                isLoadingPreview={sync.isLoadingPreview}
                 isActivatingDevice={deviceSelections.isActivatingDevice}
                 syncProgress={sync.syncProgress}
                 selectedTracks={deviceSelections.selectedTracks}

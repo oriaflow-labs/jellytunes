@@ -211,6 +211,21 @@ export function createTrackRegistry() {
   }, [])
 
   /**
+   * Compute total bytes of tracks belonging to items being removed.
+   * Iterates deviceSyncedTracks to find tracks whose itemId is in the delete set.
+   */
+  const countRemoveBytes = useCallback((toDeleteIds: string[], devicePath: string): number => {
+    const syncedTracks = state.deviceSyncedTracks.get(devicePath)
+    if (!syncedTracks || toDeleteIds.length === 0) return 0
+    const deleteSet = new Set(toDeleteIds)
+    let total = 0
+    for (const { fileSize, itemId } of syncedTracks.values()) {
+      if (deleteSet.has(itemId)) total += fileSize
+    }
+    return total
+  }, [])
+
+  /**
    * Get total size of already-synced tracks for a device
    */
   const getSyncedMusicBytes = useCallback((devicePath: string): number => {
@@ -269,6 +284,7 @@ export function createTrackRegistry() {
     ensureItemTracks,
     calculateSize,
     countNewTracks,
+    countRemoveBytes,
     getSyncedMusicBytes,
     invalidateAll,
     invalidateItem,

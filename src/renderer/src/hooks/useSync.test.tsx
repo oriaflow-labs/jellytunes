@@ -21,6 +21,7 @@ const defaultProps = {
   selectedTracks: new Set<string>(),
   previouslySyncedItems: new Set<string>(),
   syncedItemsInfo: [] as SyncedItemInfo[],
+  outOfSyncItems: new Set<string>(),
   artists: mockArtists,
   albums: mockAlbums,
   playlists: mockPlaylists,

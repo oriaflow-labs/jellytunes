@@ -10,6 +10,7 @@ interface UseSyncOptions {
   selectedTracks: Set<string>
   previouslySyncedItems: Set<string>
   syncedItemsInfo: SyncedItemInfo[]
+  outOfSyncItems: Set<string>
   artists: Artist[]
   albums: Album[]
   playlists: Playlist[]
@@ -23,6 +24,7 @@ export function useSync({
   selectedTracks,
   previouslySyncedItems,
   syncedItemsInfo,
+  outOfSyncItems,
   artists,
   albums,
   playlists,
@@ -37,7 +39,6 @@ export function useSync({
   const [syncProgress, setSyncProgress] = useState<SyncProgressInfo | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [previewData, setPreviewData] = useState<PreviewData | null>(null)
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [syncSuccessData, setSyncSuccessData] = useState<{
     tracksCopied: number; tracksSkipped: number; tracksRetagged: number; removed: number; errors: string[]
   } | null>(null)
@@ -175,7 +176,7 @@ export function useSync({
     }
   }
 
-  const handleStartSync = async (): Promise<void> => {
+  const handleStartSync = (): void => {
     if (!syncFolder) { alert('Please select a sync destination folder first'); return }
     if (!jellyfinConfig || !userId) { alert('Not connected to Jellyfin'); return }
 
@@ -185,82 +186,32 @@ export function useSync({
       return
     }
 
-    // Delete-only: skip estimate and go straight to sync
+    // Delete-only: skip preview and go straight to sync
     if (selectedTracks.size === 0) {
       executeSyncNow()
       return
     }
 
-    const { artistIds, albumIds, playlistIds, map } = buildItemTypesMap()
-    const selectedIds = [...artistIds, ...albumIds, ...playlistIds].filter(Boolean)
+    // ── Build preview from already-computed data (no network calls) ───────
+    //
+    // SyncPanel already knows the state of every item (new/synced/outOfSync/remove)
+    // via activateDevice → analyzeDiff. We just read from registry + outOfSyncItems.
+    //
+    const syncedIds = new Set(syncedItemsInfo.map(i => i.id))
+    const newItemIds = [...selectedTracks].filter(id => !syncedIds.has(id))
+    const updatedItemIds = [...selectedTracks].filter(id => outOfSyncItems.has(id))
 
-    // Ensure tracks are loaded for all selected items before computing preview.
-    // Items toggled from library view may not have had ensureItemTracks called yet
-    // (lastOpts.itemTypes didn't include them at toggle time → 0 tracks in registry).
-    const toFetch = [...selectedTracks].filter(id => map[id] && registry.getItemTrackIds(id).length === 0)
-    if (toFetch.length > 0) {
-      setIsLoadingPreview(true)
-      try {
-        await Promise.all(
-          toFetch.map(id => registry.ensureItemTracks(id, map[id], {
-            serverUrl: jellyfinConfig.url,
-            apiKey: jellyfinConfig.apiKey,
-            userId,
-          }))
-        )
-      } catch { /* show modal with available data on error */ } finally {
-        setIsLoadingPreview(false)
-      }
-    }
+    // Track counts from registry (synced/outOfSync items are always loaded via loadDeviceSyncedTracks)
+    const newTracksCount = newItemIds.reduce((sum, id) => sum + registry.getItemTrackIds(id).length, 0)
+    const updatedTracksCount = updatedItemIds.reduce((sum, id) => sum + registry.getItemTrackIds(id).length, 0)
 
-    // Use registry for instant size calculation (no network call)
-    const totalBytes = registry.calculateSize(selectedTracks, syncFolder, convertToMp3, bitrate) ?? 0
-    const newTrackCount = registry.countNewTracks(selectedTracks, syncFolder)
+    // Sizes from registry (instant, same source as Audio bar in SyncPanel)
+    const newItemSet = new Set(newItemIds)
+    const updatedItemSet = new Set(updatedItemIds)
+    const newTracksBytes = registry.calculateSize(newItemSet, syncFolder, convertToMp3, bitrate) ?? 0
+    const updatedTracksBytes = registry.calculateSize(updatedItemSet, syncFolder, convertToMp3, bitrate) ?? 0
     const willRemoveCount = toDeleteIds.length
-
-    // Call analyzeDiff for accurate breakdown of new/updated/removed tracks
-    // items that are already synced will be analyzed for changes
-    let newTracksCount = newTrackCount
-    let newTracksBytes = totalBytes
-    let updatedTracksCount = 0
-    let updatedTracksBytes = 0
-    let willRemoveBytes = 0
-
-    if (selectedIds.length > 0 && jellyfinConfig) {
-      try {
-        const diffResult = await window.api.analyzeDiff({
-          serverUrl: jellyfinConfig.url,
-          apiKey: jellyfinConfig.apiKey,
-          userId,
-          itemIds: selectedIds,
-          itemTypes: map,
-          destinationPath: syncFolder,
-          options: { convertToMp3, bitrate, coverArtMode: 'embed' },
-        })
-        if (diffResult.success) {
-          const { newTracks, metadataChanged } = diffResult.totals
-          updatedTracksCount = metadataChanged
-          newTracksCount = newTracks
-          // Estimate bytes proportionally using track count ratio
-          if (newTrackCount > 0 && newTracks > 0) {
-            newTracksBytes = Math.round(totalBytes * (newTracks / (newTracks + metadataChanged)))
-            updatedTracksBytes = totalBytes - newTracksBytes
-          }
-          // Remove bytes from items being deleted — use registry to compute
-          if (willRemoveCount > 0) {
-            let removeBytes = 0
-            for (const id of toDeleteIds) {
-              const trackIds = registry.getItemTrackIds(id)
-              for (const tid of trackIds) {
-                const synced = (registry as { deviceSyncedTracks?: Map<string, Map<string, { fileSize: number; itemId: string }>> }).deviceSyncedTracks?.get(syncFolder)?.get(tid)
-                if (synced) removeBytes += synced.fileSize
-              }
-            }
-            willRemoveBytes = removeBytes
-          }
-        }
-      } catch { /* ignore diff errors, use registry estimates */ }
-    }
+    const willRemoveBytes = registry.countRemoveBytes(toDeleteIds, syncFolder)
 
     setPreviewData({
       trackCount: newTracksCount + updatedTracksCount,
@@ -297,7 +248,6 @@ export function useSync({
     showPreview,
     setShowPreview,
     previewData,
-    isLoadingPreview,
     syncSuccessData,
     setSyncSuccessData,
     handleSelectSyncFolder,

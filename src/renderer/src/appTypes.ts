@@ -111,6 +111,7 @@ export interface PreviewData {
   updatedTracksBytes: number
   willRemoveCount: number
   willRemoveBytes: number
+  isRefining?: boolean
 }
 
 export interface ItemTypeIndex {

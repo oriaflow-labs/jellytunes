@@ -43,7 +43,6 @@ interface DeviceSyncPanelProps {
   convertToMp3: boolean
   bitrate: Bitrate
   isSyncing: boolean
-  isLoadingPreview: boolean
   isActivatingDevice: boolean
   syncProgress: SyncProgressInfo | null
   selectedTracks: Set<string>
@@ -89,7 +88,6 @@ export function DeviceSyncPanel({
   convertToMp3,
   bitrate,
   isSyncing,
-  isLoadingPreview,
   isActivatingDevice,
   syncProgress,
   selectedTracks,
@@ -181,7 +179,7 @@ export function DeviceSyncPanel({
   const otherFiles = deviceInfo ? Math.max(0, deviceInfo.used - (syncedMusicBytes ?? 0)) : null
   const otherPct = deviceInfo ? Math.round((Math.max(0, deviceInfo.used - (syncedMusicBytes ?? 0)) / deviceInfo.total) * 100) : null
   const audioPct = deviceInfo && audioBytes > 0 ? Math.min(Math.round((audioBytes / deviceInfo.total) * 100), Math.max(0, 100 - (otherPct ?? 0))) : null
-  const isAudioLoading = !!(isLoadingSize || isLoadingPreview)
+  const isAudioLoading = !!isLoadingSize
   const audioDisplayBytes = estimatedSizeBytes ?? syncedMusicBytes
   const Icon = isUsbDevice ? HardDrive : Folder
   const isFat32 = filesystemType === 'fat32'
@@ -392,13 +390,11 @@ export function DeviceSyncPanel({
             <button
               data-testid="sync-button"
               onClick={onStartSync}
-              disabled={isLoadingPreview || isActivatingDevice || syncItems.length === 0}
+              disabled={isActivatingDevice || syncItems.length === 0}
               className="w-full bg-gradient-primary hover:bg-secondary_container disabled:bg-surface_container_highest disabled:text-on_surface_variant py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
             >
               {isActivatingDevice ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Calculating sync state…</>
-              ) : isLoadingPreview ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Calculating...</>
               ) : (
                 `Sync to ${destinationName}`
               )}

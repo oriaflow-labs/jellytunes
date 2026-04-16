@@ -55,7 +55,6 @@ function renderPanel(overrides: Partial<Parameters<typeof DeviceSyncPanel>[0]> =
     convertToMp3: false,
     bitrate: '192k' as Bitrate,
     isSyncing: false,
-    isLoadingPreview: false,
     isActivatingDevice: false,
     syncProgress: null,
     selectedTracks: new Set<string>(),

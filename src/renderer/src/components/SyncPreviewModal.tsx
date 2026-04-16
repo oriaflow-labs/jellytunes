@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import type { PreviewData, Bitrate } from '../appTypes'
 
 interface SyncPreviewModalProps {
@@ -24,6 +24,7 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
         <h2 className="text-headline-md mb-4 flex items-center gap-2">
           <Check className="w-5 h-5 text-primary" />
           Sync Preview
+          {data.isRefining && <Loader2 className="w-4 h-4 animate-spin text-on_surface_variant ml-1" />}
         </h2>
 
         <div className="space-y-3 mb-6">
@@ -52,10 +53,12 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
           {/* Will remove */}
           {showRemove && (
             <div className="flex justify-between text-body-md">
-              <span className="text-on_surface_variant">Will remove</span>
-              <div className="flex items-center gap-2">
-                <span data-testid="preview-will-remove-count" className="font-medium">{data.willRemoveCount.toLocaleString()}</span>
-                <span data-testid="preview-will-remove-size" className="text-on_surface_variant">({formatGB(data.willRemoveBytes)} GB)</span>
+              <span className="text-error">Will remove</span>
+              <div className="flex items-center gap-2 text-error">
+                <span data-testid="preview-will-remove-count" className="font-medium">−{data.willRemoveCount.toLocaleString()}</span>
+                {data.willRemoveBytes > 0 && (
+                  <span data-testid="preview-will-remove-size" className="opacity-70">(−{formatGB(data.willRemoveBytes)} GB)</span>
+                )}
               </div>
             </div>
           )}
