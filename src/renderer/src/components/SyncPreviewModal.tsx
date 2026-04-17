@@ -37,7 +37,7 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
               <span className="text-primary">New tracks</span>
               <div className="flex items-center gap-2">
                 <span data-testid="preview-new-tracks-count" className="font-medium text-primary">{data.newTracksCount.toLocaleString()}</span>
-                <span data-testid="preview-new-tracks-size" className="text-primary">({formatBytes(data.newTracksBytes)})</span>
+                <span data-testid="preview-new-tracks-size" className="text-primary">({convertToMp3 ? '~' : ''}{formatBytes(data.newTracksBytes)})</span>
               </div>
             </div>
           )}
@@ -48,7 +48,7 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
               <span className="text-warning">Will update</span>
               <div className="flex items-center gap-2">
                 <span data-testid="preview-updated-tracks-count" className="font-medium text-warning">{data.updatedTracksCount.toLocaleString()}</span>
-                <span data-testid="preview-updated-tracks-size" className="text-warning">({formatBytes(data.updatedTracksBytes)})</span>
+                <span data-testid="preview-updated-tracks-size" className="text-warning">({convertToMp3 ? '~' : ''}{formatBytes(data.updatedTracksBytes)})</span>
               </div>
             </div>
           )}
@@ -59,7 +59,7 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
               <span className="text-success">Already on device</span>
               <div className="flex items-center gap-2">
                 <span className="font-medium text-success">{data.alreadySyncedCount.toLocaleString()}</span>
-                <span className="text-success">({formatBytes(data.alreadySyncedBytes)})</span>
+                <span className="text-success">({convertToMp3 ? '~' : ''}{formatBytes(data.alreadySyncedBytes)})</span>
               </div>
             </div>
           )}
@@ -81,7 +81,7 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
           {(showNew || showUpdated || showAlreadySynced) && (
             <div className="flex justify-between text-body-md border-t border-outline_variant pt-2 mt-2">
               <span className="text-on_surface_variant">Total</span>
-              <span className="font-medium">{formatBytes(data.totalBytes)}</span>
+              <span className="font-medium">{convertToMp3 ? '~' : ''}{formatBytes(data.totalBytes)}</span>
             </div>
           )}
 
@@ -101,8 +101,8 @@ export function SyncPreviewModal({ data, convertToMp3, bitrate, onCancel, onConf
 
           {convertToMp3 && (
             <div className="text-caption text-on_surface_variant bg-surface_container_highest rounded p-2 space-y-1">
-              <div>FLAC/lossless and other formats → MP3 {bitrate}</div>
-              <div>MP3 tracks above {bitrate} → re-encoded to {bitrate}</div>
+              <div>FLAC/lossless → MP3 {bitrate} (estimated size)</div>
+              <div>MP3 above {bitrate} → re-encoded to {bitrate} (estimated size)</div>
             </div>
           )}
         </div>
