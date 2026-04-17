@@ -364,8 +364,16 @@ function App(): JSX.Element {
                 estimatedSizeBytes={deviceSelections.estimatedSizeBytes}
                 isLoadingSize={deviceSelections.isLoadingSize}
                 onToggleItem={deviceSelections.toggleItem}
-                onToggleConvert={() => sync.setConvertToMp3(v => !v)}
-                onBitrateChange={sync.setBitrate}
+                onToggleConvert={() => {
+                  sync.setConvertToMp3(v => {
+                    deviceSelections.updateConvertOptions(!v, sync.bitrate)
+                    return !v
+                  })
+                }}
+                onBitrateChange={b => {
+                  deviceSelections.updateConvertOptions(sync.convertToMp3, b)
+                  sync.setBitrate(b)
+                }}
                 onStartSync={sync.handleStartSync}
                 onCancelSync={sync.handleCancelSync}
                 onCancelPreview={() => sync.setShowPreview(false)}
