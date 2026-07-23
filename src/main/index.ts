@@ -9,6 +9,7 @@ import * as os from 'os';
 import { createSyncCore, createApiClient, type CoverArtMode, type TrackInfo } from '../sync';
 import { detectSnapEnv, type SnapEnv } from './snap-env';
 import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
+import { isSecureStorageAvailable } from './secure-storage';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -669,8 +670,11 @@ const SESSION_FILE = () => join(app.getPath('userData'), 'session.enc');
 
 ipcMain.handle('session:save', (_event, plaintext: string) => {
   try {
-    if (!safeStorage.isEncryptionAvailable()) {
-      // Encryption unavailable — reject save to prevent plaintext credentials on disk
+    if (!isSecureStorageAvailable(safeStorage)) {
+      // No OS-backed keyring available (or Linux fell back to the insecure
+      // basic_text backend, e.g. under Snap strict confinement without
+      // password-manager-service connected) — reject save rather than
+      // silently persisting weakly-"encrypted" credentials (ORAIN-0571).
       return { success: false, reason: 'encryption_unavailable' };
     }
     const encrypted = safeStorage.encryptString(plaintext);
@@ -684,8 +688,9 @@ ipcMain.handle('session:save', (_event, plaintext: string) => {
 
 ipcMain.handle('session:load', () => {
   try {
-    if (!safeStorage.isEncryptionAvailable()) {
-      // Encryption unavailable — refuse to read plaintext session
+    if (!isSecureStorageAvailable(safeStorage)) {
+      // Same fail-safe as session:save — refuse to read/decrypt via a
+      // non-OS-backed backend rather than silently degrading (ORAIN-0571).
       return null;
     }
     const filePath = SESSION_FILE();
