@@ -92,7 +92,7 @@ export function Sidebar({
 
   return (
     <aside
-      className={`w-64 border-r border-outline_variant p-4 flex flex-col${isSyncing ? ' pointer-events-none select-none' : ''}`}
+      className={`w-64 border-r border-outline_variant p-4 flex flex-col min-h-0${isSyncing ? ' pointer-events-none select-none' : ''}`}
     >
       {/* Library */}
       <div className="mb-6">
@@ -183,7 +183,11 @@ export function Sidebar({
       </div>
 
       {/* Devices + Folders */}
-      <div className="flex-1">
+      {/* ORAIN-0574: overflow-y-auto + min-h-0 lets this region scroll inside
+          the <aside> flex column when the window height is small. The parent
+          <aside> also needs min-h-0 for the flex child to shrink below its
+          content size. */}
+      <div data-testid="devices-folders-scroll" className="flex-1 overflow-y-auto min-h-0">
         {/* Devices section */}
         <h3 className="text-label-md uppercase text-on_surface_variant/60 px-3 mt-3 mb-1 flex items-center justify-between">
           Devices

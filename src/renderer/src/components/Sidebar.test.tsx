@@ -201,4 +201,44 @@ describe('Sidebar', () => {
       expect(genresTab).toHaveClass(/bg-primary_container/);
     });
   });
+
+  // 9. ORAIN-0574: short viewport — devices/folders container must scroll.
+  // Regression: the inner `<div className="flex-1">` lacked `overflow-y-auto` and
+  // `min-h-0`, so when the window was short the content overflowed and was
+  // unreachable. Fix: overflow-y-auto + min-h-0 on the container, with the
+  // <aside> parent also using min-h-0 so the flex child can shrink.
+  describe('Scrollable devices/folders region (ORAIN-0574)', () => {
+    const manyDevices: UsbDevice[] = Array.from({ length: 8 }, (_, i) => ({
+      device: `/dev/sd${String.fromCharCode(97 + i)}1`,
+      displayName: `Device ${i + 1}`,
+      size: 32e9,
+      mountpoints: [{ path: `/mnt/device-${i + 1}` }],
+      isRemovable: true,
+    }));
+
+    it('renders devices/folders inside a scrollable container with overflow-y-auto and min-h-0', () => {
+      render(<Sidebar {...defaultProps} usbDevices={manyDevices} />);
+      const container = screen.getByTestId('devices-folders-scroll');
+      expect(container).toHaveClass('overflow-y-auto');
+      expect(container).toHaveClass('min-h-0');
+    });
+
+    it('exposes the <aside> as a flex column with min-h-0 so the scroll child can shrink', () => {
+      const { container } = render(<Sidebar {...defaultProps} />);
+      const aside = container.querySelector('aside');
+      expect(aside).not.toBeNull();
+      expect(aside).toHaveClass('flex');
+      expect(aside).toHaveClass('flex-col');
+      // min-h-0 lets the flex item shrink below its content size and enables
+      // overflow-y-auto on the inner Devices+Folders container.
+      expect(aside).toHaveClass('min-h-0');
+    });
+
+    it('keeps the "Add folder" button inside the scrollable region', () => {
+      render(<Sidebar {...defaultProps} usbDevices={manyDevices} />);
+      const container = screen.getByTestId('devices-folders-scroll');
+      const addFolder = screen.getByTestId('add-folder-button');
+      expect(container.contains(addFolder)).toBe(true);
+    });
+  });
 });
