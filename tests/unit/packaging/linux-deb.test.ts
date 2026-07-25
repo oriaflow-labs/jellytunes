@@ -23,7 +23,7 @@ const linuxTemplate = (name: string): string =>
 describe('Linux deb sandbox packaging', () => {
   it('uses electron-builder v26 with the existing deb and AppImage targets', () => {
     expect(projectManifest.devDependencies['electron-builder']).toMatch(/^\^26\./);
-    expect(projectManifest.build.linux.target).toEqual(['AppImage', 'deb']);
+    expect(projectManifest.build.linux.target).toEqual(['AppImage', 'deb', 'snap']);
   });
 
   it('provides the project URL required by v26 deb metadata', () => {

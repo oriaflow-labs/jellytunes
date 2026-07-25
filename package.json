@@ -124,10 +124,28 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "snap"
       ],
       "icon": "assets/icons",
       "synopsis": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC"
+    },
+    "snapcraft": {
+      "base": "core24",
+      "core24": {
+        "confinement": "strict",
+        "useDestructiveMode": true,
+        "executableArgs": [
+          "--disable-dev-shm-usage"
+        ],
+        "plugs": [
+          "default",
+          "removable-media",
+          "mount-observe",
+          "password-manager-service",
+          "hardware-observe"
+        ]
+      }
     }
   },
   "lint-staged": {

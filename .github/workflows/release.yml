@@ -34,6 +34,13 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Set as a repo secret once the snap name is registered and approved by
+      # Canonical (out of scope for ORAIN-0572 — see task notes). Left unset,
+      # the "Publish snap to the Snap Store" step below is skipped so the
+      # rest of the release pipeline keeps working unchanged.
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+
     steps:
       - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
 
@@ -54,7 +61,9 @@ jobs:
 
       - name: Install system dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libudev-dev
+        run: |
+          sudo apt-get update && sudo apt-get install -y libudev-dev
+          sudo snap install snapcraft --classic
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -66,6 +75,10 @@ jobs:
         env:
           npm_config_arch: ${{ matrix.arch }}
 
+      - name: Publish snap to the Snap Store
+        if: matrix.platform == 'linux' && env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        run: snapcraft upload --release=edge release/*.snap
+
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@3efcac8951299998593f871640ea8059d6818655
         with:
@@ -76,5 +89,6 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.snap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
