@@ -294,11 +294,22 @@ const api = {
   reportBug: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('bug:report'),
 
   // Check for updates via GitHub Releases API (max once per 24h, no telemetry)
-  // Pass force=true to bypass the cache (e.g. manual check button)
+  // Pass force=true to bypass the cache (e.g. manual check button).
+  // ORAIN-0573: result now includes `managedBySnap` — true when running under
+  // snap, in which case `updateAvailable` is forced to false (snapd refreshes).
   checkForUpdates: (
     force?: boolean,
-  ): Promise<{ updateAvailable: boolean; latestVersion: string; releaseUrl: string }> =>
-    ipcRenderer.invoke('app:checkForUpdates', force ?? false),
+  ): Promise<{
+    updateAvailable: boolean;
+    latestVersion: string;
+    releaseUrl: string;
+    managedBySnap: boolean;
+  }> => ipcRenderer.invoke('app:checkForUpdates', force ?? false),
+
+  // ORAIN-0573: true when running inside a snap (SNAP + SNAP_NAME env vars).
+  // Used by the renderer to swap UI surfaces (e.g. hide the manual update
+  // banner, show "Managed via Snap Store" in About).
+  isSnap: (): Promise<boolean> => ipcRenderer.invoke('app:isSnap'),
 
   // Preferences
   getPreferences: (): Promise<{ analyticsEnabled: boolean }> => ipcRenderer.invoke('prefs:get'),

@@ -33,9 +33,14 @@ export function FooterStats({
   } | null>(null);
 
   useEffect(() => {
+    // ORAIN-0573: still call checkForUpdates under snap so the periodic
+    // stats ping fires, but suppress the banner — snapd handles the
+    // refresh. The IPC now reports `managedBySnap` so we don't need a
+    // separate isSnap() round-trip here.
     window.api
       .checkForUpdates()
       .then((result) => {
+        if (result.managedBySnap) return;
         if (result.updateAvailable)
           setUpdateInfo({ latestVersion: result.latestVersion, releaseUrl: result.releaseUrl });
       })

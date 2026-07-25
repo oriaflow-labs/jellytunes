@@ -230,9 +230,14 @@ interface Api {
   logInfo: (message: string) => void;
   getLogPath: () => Promise<string>;
   reportBug: () => Promise<{ success: boolean; error?: string }>;
-  checkForUpdates: (
-    force?: boolean,
-  ) => Promise<{ updateAvailable: boolean; latestVersion: string; releaseUrl: string }>;
+  checkForUpdates: (force?: boolean) => Promise<{
+    updateAvailable: boolean;
+    latestVersion: string;
+    releaseUrl: string;
+    managedBySnap: boolean;
+  }>;
+  /** ORAIN-0573: true when running inside a snap. */
+  isSnap: () => Promise<boolean>;
   getPreferences: () => Promise<{ analyticsEnabled: boolean }>;
   setPreferences: (prefs: { analyticsEnabled?: boolean }) => Promise<void>;
 }

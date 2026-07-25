@@ -7,6 +7,15 @@ import * as os from 'os';
 
 // Import new sync module
 import { createSyncCore, createApiClient, type CoverArtMode, type TrackInfo } from '../sync';
+import { detectSnapEnv, type SnapEnv } from './snap-env';
+import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
+
+// ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
+// snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
+// process it launches. Detection is computed once at module load — env
+// vars don't change at runtime.
+const snapEnv: SnapEnv = detectSnapEnv(process.env);
+const IS_SNAP: boolean = snapEnv.isSnap;
 
 // ─── Module-level track cache (ORAIN-0484) ─────────────────────────────────
 // Shared between sync:getTracksForItems and sync:analyzeDiff handlers.
@@ -1428,22 +1437,23 @@ ipcMain.handle(
 );
 
 // Update checker — queries analytics worker at most once per 24h
+// ORAIN-0573: under snap, we still ping the worker (for anonymous stats)
+// but force `updateAvailable` to false so the renderer hides the banner.
 const UPDATE_CHECKER_URL = 'https://api.orainlabs.dev/jellytunes/updates/latest';
 let lastUpdateCheck = 0;
-let cachedUpdateInfo: {
-  updateAvailable: boolean;
-  latestVersion: string;
-  releaseUrl: string;
-} | null = null;
+let cachedUpdateInfo: UpdateCheckResult | null = null;
 
-async function performUpdateCheck(
-  force = false,
-): Promise<{ updateAvailable: boolean; latestVersion: string; releaseUrl: string }> {
+async function performUpdateCheck(force = false): Promise<UpdateCheckResult> {
   // Skip update checks in development builds (VITE_DEV_BUILD or unpackaged) to avoid contaminating stats
   const isDevBuild = !app.isPackaged || process.env.VITE_DEV_BUILD === 'true';
   if (isDevBuild) {
     log.info('Update check skipped in development mode');
-    return { updateAvailable: false, latestVersion: app.getVersion(), releaseUrl: '' };
+    return {
+      updateAvailable: false,
+      latestVersion: app.getVersion(),
+      releaseUrl: '',
+      managedBySnap: IS_SNAP,
+    };
   }
   const now = Date.now();
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -1453,7 +1463,7 @@ async function performUpdateCheck(
     const { analyticsEnabled } = getPreferences();
     const request = net.fetch(UPDATE_CHECKER_URL, {
       headers: {
-        'User-Agent': `JellyTunes/${app.getVersion()} (${process.platform}; ${process.arch})`,
+        'User-Agent': `JellyTunes/${app.getVersion()} (${process.platform}; ${process.arch})${IS_SNAP ? ' (snap)' : ''}`,
         'Accept': 'application/vnd.github+json',
         ...(analyticsEnabled ? {} : { 'X-JT-Analytics-Opt-Out': '1' }),
       },
@@ -1461,12 +1471,15 @@ async function performUpdateCheck(
     const data = (await (await request).json()) as { tag_name?: string; html_url?: string };
     const latestVersion = (data.tag_name ?? '').replace(/^v/, '');
     const currentVersion = app.getVersion();
-    const updateAvailable = latestVersion !== '' && latestVersion !== currentVersion;
-    cachedUpdateInfo = { updateAvailable, latestVersion, releaseUrl: data.html_url ?? '' };
+    const result = buildUpdateCheckResult(
+      { latestVersion, releaseUrl: data.html_url ?? '', currentVersion },
+      IS_SNAP,
+    );
+    cachedUpdateInfo = result;
     lastUpdateCheck = now;
-    return cachedUpdateInfo;
+    return result;
   } catch {
-    return { updateAvailable: false, latestVersion: '', releaseUrl: '' };
+    return { updateAvailable: false, latestVersion: '', releaseUrl: '', managedBySnap: IS_SNAP };
   }
 }
 
@@ -1478,8 +1491,17 @@ ipcMain.handle('prefs:set', (_event, partial: { analyticsEnabled?: boolean }) =>
 
 ipcMain.handle('app:checkForUpdates', (_event, force = false) => performUpdateCheck(force));
 
+// ORAIN-0573: expose snap detection so the renderer can swap UI surfaces
+// (e.g. show "Managed via Snap Store" instead of a manual update button).
+ipcMain.handle('app:isSnap', () => IS_SNAP);
+
 void app.whenReady().then(() => {
   log.info('App ready');
+  if (IS_SNAP) {
+    log.info(
+      `Running under snap: ${snapEnv.snapName} (${snapEnv.snapPath}) — update banner suppressed`,
+    );
+  }
   void initDatabase();
   electronApp.setAppUserModelId('com.jellytunes.app');
   app.on('browser-window-created', (_, window) => {

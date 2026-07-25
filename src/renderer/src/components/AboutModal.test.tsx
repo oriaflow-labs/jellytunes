@@ -6,9 +6,12 @@ import { AboutModal } from './AboutModal';
 beforeEach(() => {
   const mockApi = {
     getVersion: vi.fn().mockResolvedValue('1.2.3'),
-    checkForUpdates: vi
-      .fn()
-      .mockResolvedValue({ updateAvailable: false, latestVersion: '', releaseUrl: '' }),
+    checkForUpdates: vi.fn().mockResolvedValue({
+      updateAvailable: false,
+      latestVersion: '',
+      releaseUrl: '',
+      managedBySnap: false,
+    }),
     getPreferences: vi.fn().mockResolvedValue({ analyticsEnabled: true }),
     setPreferences: vi.fn().mockResolvedValue(undefined),
     reportBug: vi.fn().mockResolvedValue({ success: true }),
@@ -16,6 +19,7 @@ beforeEach(() => {
     logWarn: vi.fn(),
     logInfo: vi.fn(),
     getLogPath: vi.fn().mockResolvedValue('/mock/log'),
+    isSnap: vi.fn().mockResolvedValue(false),
   };
   // @ts-expect-error — Mocking window.api for test environment
   window.api = mockApi;
@@ -125,6 +129,7 @@ describe('AboutModal', () => {
       updateAvailable: true,
       latestVersion: '9.9.9',
       releaseUrl: 'https://x',
+      managedBySnap: false,
     });
     render(<AboutModal onClose={vi.fn()} />);
     const button = await screen.findByText('Check Updates');

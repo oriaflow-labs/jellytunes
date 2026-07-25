@@ -15,15 +15,24 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  const [isSnap, setIsSnap] = useState(false);
 
   useEffect(() => {
     window.api
       .getVersion()
       .then(setVersion)
       .catch(() => {});
+    // ORAIN-0573: under snap, snapd handles the refresh — never show the
+    // manual update UI. We still call checkForUpdates so the periodic
+    // stats ping fires.
+    window.api
+      .isSnap()
+      .then(setIsSnap)
+      .catch(() => {});
     window.api
       .checkForUpdates()
       .then((result) => {
+        if (result.managedBySnap) return;
         if (result.updateAvailable)
           setUpdateInfo({ latestVersion: result.latestVersion, releaseUrl: result.releaseUrl });
       })
@@ -44,6 +53,9 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
   };
 
   const handleCheckUpdate = async (): Promise<void> => {
+    // ORAIN-0573: under snap, the Check Updates button is not rendered, but
+    // bail out defensively if anything ever invokes this handler.
+    if (isSnap) return;
     setCheckingUpdate(true);
     setUpdateInfo(null);
     setUpToDate(false);
@@ -111,7 +123,17 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
             Contact Us
           </a>
 
-          {updateInfo ? (
+          {isSnap ? (
+            // ORAIN-0573 AC2: under snap, show a static indicator so the user
+            // knows updates are automatic (snapd refreshes the snap).
+            <div
+              data-testid="snap-managed-indicator"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-4 h-12 text-body-md rounded-lg bg-surface_container_highest text-on_surface_variant"
+              title="Updates are managed automatically by snapd via the Snap Store."
+            >
+              ✓ Managed via Snap Store
+            </div>
+          ) : updateInfo ? (
             <a
               href="#"
               onClick={(e) => {
