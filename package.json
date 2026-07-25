@@ -134,7 +134,10 @@
       "base": "core24",
       "core24": {
         "confinement": "strict",
-        "useDestructiveMode": true,
+        "useLXD": true,
+        "stagePackages": [
+          "default"
+        ],
         "executableArgs": [
           "--disable-dev-shm-usage"
         ],

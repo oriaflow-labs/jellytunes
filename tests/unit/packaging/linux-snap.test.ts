@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 interface SnapCore24Options {
   readonly confinement: string;
-  readonly useDestructiveMode: boolean;
+  readonly useLXD: boolean;
+  readonly stagePackages: readonly string[];
   readonly executableArgs: readonly string[];
   readonly plugs: readonly string[];
 }
@@ -40,8 +41,12 @@ describe('Linux snap sandbox packaging', () => {
     expect(projectManifest.build.snapcraft.core24.confinement).toBe('strict');
   });
 
-  it('builds destructively on the CI runner instead of requiring LXD/multipass', () => {
-    expect(projectManifest.build.snapcraft.core24.useDestructiveMode).toBe(true);
+  it('builds via LXD so the gnome extension provisions Electron/Chromium runtime libraries automatically', () => {
+    expect(projectManifest.build.snapcraft.core24.useLXD).toBe(true);
+  });
+
+  it('opts into the default stage-packages (libnss3 and friends) — omitting this silently ships zero runtime libs', () => {
+    expect(projectManifest.build.snapcraft.core24.stagePackages).toContain('default');
   });
 
   it('disables /dev/shm so Chromium falls back to $TMPDIR under strict confinement', () => {
