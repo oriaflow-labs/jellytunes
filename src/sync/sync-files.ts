@@ -185,23 +185,18 @@ export function createNodeFileSystem(): FileSystem {
     },
 
     getFreeSpace: async (path: string) => {
-      // Platform-specific implementation — uses spawnSync with arg arrays (no shell injection risk)
       const platform = process.platform;
-      const { spawnSync } = require('child_process');
 
       try {
         if (platform === 'darwin' || platform === 'linux') {
-          const result = spawnSync('df', ['-k', path], { encoding: 'utf8' as const });
-          const lines = (result.stdout ?? '')
-            .trim()
-            .split('\n')
-            .filter((l: string) => l.trim());
-          const lastLine = lines[lines.length - 1] ?? '';
-          const parts = lastLine.trim().split(/\s+/);
-          if (parts.length >= 4) {
-            return parseInt(parts[3]) * 1024; // Convert KB to bytes
-          }
-        } else if (platform === 'win32') {
+          // fs.statfsSync is a syscall, not a subprocess exec — unlike `df`,
+          // it isn't blocked by strict Snap confinement's AppArmor exec policy.
+          const { statfsSync } = require('fs');
+          const stats = statfsSync(path);
+          return stats.bavail * stats.bsize;
+        }
+        if (platform === 'win32') {
+          const { spawnSync } = require('child_process');
           const driveLetter = path.charAt(0);
           const result = spawnSync(
             'wmic',

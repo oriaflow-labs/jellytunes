@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage, Menu } from 'electron';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
@@ -122,6 +122,105 @@ interface DeviceInfo {
   used: number;
 }
 
+interface LinuxMountEntry {
+  mountpoint: string;
+  fstype: string;
+}
+
+const REMOVABLE_MOUNT_ROOTS = ['/media', '/mnt', '/run/media'];
+
+/** Unescape octal sequences (\040 space, \011 tab, \012 newline, \134 backslash) used in /proc/mounts. */
+function unescapeMountPath(value: string): string {
+  return value.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
+}
+
+/**
+ * Parse /proc/mounts for the real kernel mount table — a plain file read, no
+ * subprocess exec, so it isn't blocked by the same strict-confinement rule
+ * that blocks exec'ing `df`. Reading /proc/mounts itself is gated behind the
+ * `mount-observe` interface (AppArmor rule `@{PROC}/mounts r,`, snapd
+ * `interfaces/builtin/mount_observe.go`) — not auto-connected, so this
+ * returns null (not []) on EACCES to let the caller fall back rather than
+ * silently reporting "no volumes".
+ */
+function readLinuxMounts(): LinuxMountEntry[] | null {
+  try {
+    const content = fs.readFileSync('/proc/mounts', 'utf8');
+    return content
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        const parts = line.split(' ');
+        return { mountpoint: unescapeMountPath(parts[1] ?? ''), fstype: parts[2] ?? '' };
+      })
+      .filter((entry) => entry.mountpoint);
+  } catch (err) {
+    log.warn('Failed to read /proc/mounts (mount-observe interface may not be connected):', err);
+    return null;
+  }
+}
+
+/**
+ * Find mounted volumes under conventional removable-media roots.
+ * Reads the real mount table instead of listing directories one level deep,
+ * so it correctly reaches volumes nested under a per-user directory
+ * (the standard GVFS/udisks2 convention: /media/$USER/$LABEL), rather than
+ * stopping at the intermediate $USER directory and treating it as the device.
+ *
+ * Falls back to the legacy one-level directory scan when /proc/mounts can't
+ * be read (e.g. `mount-observe` not connected under strict Snap confinement)
+ * — degraded (may mislabel nested mounts) but still functional, rather than
+ * reporting zero devices.
+ */
+function listLinuxRemovableMounts(): UsbDevice[] {
+  const mounts = readLinuxMounts();
+  if (mounts === null) {
+    return listLinuxRemovableMountsLegacyScan();
+  }
+  return mounts
+    .filter((entry) =>
+      REMOVABLE_MOUNT_ROOTS.some(
+        (root) => entry.mountpoint !== root && entry.mountpoint.startsWith(root + '/'),
+      ),
+    )
+    .map((entry) => ({
+      device: entry.mountpoint,
+      displayName: basename(entry.mountpoint),
+      size: 0,
+      mountpoints: [{ path: entry.mountpoint }],
+      isRemovable: true,
+    }));
+}
+
+/** Pre-/proc/mounts fallback: lists one directory level under each removable-media root. */
+function listLinuxRemovableMountsLegacyScan(): UsbDevice[] {
+  const devices: UsbDevice[] = [];
+  for (const mp of REMOVABLE_MOUNT_ROOTS) {
+    if (!fs.existsSync(mp)) continue;
+    try {
+      for (const item of fs.readdirSync(mp)) {
+        const itemPath = join(mp, item);
+        try {
+          if (fs.statSync(itemPath).isDirectory()) {
+            devices.push({
+              device: itemPath,
+              displayName: item,
+              size: 0,
+              mountpoints: [{ path: itemPath }],
+              isRemovable: true,
+            });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return devices;
+}
+
 async function listUsbDevices(): Promise<UsbDevice[]> {
   // drivelist removed - using folder selection instead
   // For USB detection, user selects folder manually
@@ -167,33 +266,7 @@ function listMountedVolumesFallback(): UsbDevice[] {
         }
       }
     } else if (platform === 'linux') {
-      const mountPaths = ['/media', '/mnt', '/run/media'];
-      for (const mp of mountPaths) {
-        if (fs.existsSync(mp)) {
-          try {
-            const items = fs.readdirSync(mp);
-            for (const item of items) {
-              const itemPath = join(mp, item);
-              try {
-                const stats = fs.statSync(itemPath);
-                if (stats.isDirectory()) {
-                  devices.push({
-                    device: itemPath,
-                    displayName: item,
-                    size: 0,
-                    mountpoints: [{ path: itemPath }],
-                    isRemovable: true,
-                  });
-                }
-              } catch (_e) {
-                /* ignore */
-              }
-            }
-          } catch (_e) {
-            /* ignore */
-          }
-        }
-      }
+      devices.push(...listLinuxRemovableMounts());
     } else if (platform === 'win32') {
       try {
         const { spawnSync } = require('child_process');
@@ -241,21 +314,15 @@ async function getDeviceInfo(devicePath: string): Promise<DeviceInfo> {
   try {
     const platform = process.platform;
     if (platform === 'darwin' || platform === 'linux') {
-      // spawnSync with arg array — no shell injection risk
-      const result = spawnSync('df', ['-k', devicePath], { encoding: 'utf8' });
-      const lines = (result.stdout ?? '')
-        .trim()
-        .split('\n')
-        .filter((l: string) => l.trim());
-      const lastLine = lines[lines.length - 1] ?? '';
-      const parts = lastLine.trim().split(/\s+/);
-      if (parts.length >= 4) {
-        const total = parseInt(parts[1]) * 1024;
-        const used = parseInt(parts[2]) * 1024;
-        const free = parseInt(parts[3]) * 1024;
-        return { total, free, used };
-      }
-    } else if (platform === 'win32') {
+      // fs.statfsSync is a syscall, not a subprocess exec — unlike `df`, it
+      // isn't blocked by strict Snap confinement's AppArmor exec policy.
+      const stats = fs.statfsSync(devicePath);
+      const total = stats.blocks * stats.bsize;
+      const free = stats.bavail * stats.bsize;
+      const used = total - stats.bfree * stats.bsize;
+      return { total, free, used };
+    }
+    if (platform === 'win32') {
       const driveLetter = devicePath.charAt(0);
       const result = spawnSync(
         'wmic',
@@ -305,18 +372,16 @@ async function detectFilesystem(devicePath: string): Promise<string> {
         if (t.includes('hfs')) return 'hfs+';
       }
     } else if (platform === 'linux') {
-      const result = spawnSync('df', ['-T', devicePath], { encoding: 'utf8', timeout: 5000 });
-      const lines = (result.stdout ?? '')
-        .trim()
-        .split('\n')
-        .filter((l: string) => l.trim());
-      const lastLine = lines[lines.length - 1] ?? '';
-      const parts = lastLine.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        const t = parts[1].toLowerCase();
+      // Read the kernel mount table instead of exec'ing `df -T` — a plain
+      // file read, so it isn't blocked by strict Snap confinement.
+      const match = (readLinuxMounts() ?? [])
+        .filter((m) => devicePath === m.mountpoint || devicePath.startsWith(m.mountpoint + '/'))
+        .sort((a, b) => b.mountpoint.length - a.mountpoint.length)[0];
+      if (match) {
+        const t = match.fstype.toLowerCase();
         if (t === 'vfat' || t === 'fat32' || t === 'msdos') return 'fat32';
         if (t === 'exfat') return 'exfat';
-        if (t === 'ntfs' || t === 'ntfs-3g' || t === 'fuseblk') return 'ntfs';
+        if (t === 'ntfs' || t === 'ntfs3' || t === 'ntfs-3g' || t === 'fuseblk') return 'ntfs';
         if (t === 'ext4' || t === 'ext3' || t === 'ext2' || t === 'btrfs' || t === 'xfs')
           return 'ext4';
         if (t === 'apfs') return 'apfs';
