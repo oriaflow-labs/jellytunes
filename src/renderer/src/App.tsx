@@ -724,6 +724,7 @@ function App(): JSX.Element {
         onUrlChange={connection.setUrlInput}
         onApiKeyChange={connection.setApiKeyInput}
         onSubmit={connection.connectToJellyfin}
+        snapKeyringIssue={connection.snapKeyringIssue}
       />
     );
   }

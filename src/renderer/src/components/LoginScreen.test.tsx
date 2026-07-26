@@ -3,6 +3,15 @@ import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { LoginScreen } from './LoginScreen';
 
+// Mock clipboard for SnapKeyringBanner (re-uses the same navigator.clipboard shim)
+beforeAll(() => {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  });
+});
+
 const mockApi = {
   listUsbDevices: vi.fn().mockResolvedValue([]),
   getDeviceInfo: vi.fn().mockResolvedValue({ total: 32e9, free: 16e9, used: 16e9 }),
@@ -151,5 +160,40 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('button')).toHaveTextContent('Connect');
     // Helper text should be in English
     expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
+  });
+
+  // 7. ORAIN-0578 T1: keyring banner hidden by default
+  it('does not show the snap keyring banner by default', () => {
+    const props = {
+      urlInput: '',
+      apiKeyInput: '',
+      error: null as string | null,
+      onUrlChange: vi.fn(),
+      onApiKeyChange: vi.fn(),
+      onSubmit: vi.fn(),
+    };
+    render(<LoginScreen {...props} />);
+    expect(screen.queryByTestId('snap-keyring-banner')).not.toBeInTheDocument();
+  });
+
+  // 8. ORAIN-0578 T1: keyring banner rendered when issue is provided
+  it('shows the snap keyring banner when snapKeyringIssue is provided', () => {
+    const props = {
+      urlInput: '',
+      apiKeyInput: '',
+      error: null as string | null,
+      onUrlChange: vi.fn(),
+      onApiKeyChange: vi.fn(),
+      onSubmit: vi.fn(),
+      snapKeyringIssue: {
+        command: 'sudo snap connect jellytunes:password-manager-service',
+        snapName: 'jellytunes',
+      },
+    };
+    render(<LoginScreen {...props} />);
+    expect(screen.getByTestId('snap-keyring-banner')).toBeInTheDocument();
+    expect(
+      screen.getByText('sudo snap connect jellytunes:password-manager-service'),
+    ).toBeInTheDocument();
   });
 });

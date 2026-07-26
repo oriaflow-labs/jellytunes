@@ -13,6 +13,13 @@ interface ConnectionState {
   pendingConfig: { url: string; apiKey: string } | null;
   urlInput: string;
   apiKeyInput: string;
+  /**
+   * ORAIN-0578 T1: non-null while the most recent `session:save` returned
+   * `encryption_unavailable` AND we are running under snap — the login UI
+   * uses this to surface the `snap connect ...:password-manager-service`
+   * banner. Cleared on a successful save (e.g. after a manual reconnect).
+   */
+  snapKeyringIssue: { command: string; snapName: string } | null;
 }
 
 interface SavedSession {
@@ -26,7 +33,7 @@ async function saveSession(
   url: string,
   apiKey: string,
   userId: string,
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; reason?: string }> {
   try {
     const result = await window.api.saveSession(JSON.stringify({ url, apiKey, userId }));
     if (!result.success) {
@@ -74,10 +81,46 @@ export function useJellyfinConnection(
     pendingConfig: null,
     urlInput: '',
     apiKeyInput: '',
+    snapKeyringIssue: null,
   });
 
   const connectWithUser = async (url: string, apiKey: string, userId: string): Promise<void> => {
-    await saveSession(url, apiKey, userId);
+    const saveResult = await saveSession(url, apiKey, userId);
+    // ORAIN-0578 T1: under snap, `encryption_unavailable` from session:save
+    // means password-manager-service isn't connected. Surface the banner so
+    // the user knows the next launch needs `snap connect ...` — without
+    // this, the login looks fine but credentials silently don't persist.
+    if (saveResult.reason === 'encryption_unavailable') {
+      let isSnap = false;
+      try {
+        isSnap = await window.api.isSnap();
+      } catch {
+        /* IPC failure — leave isSnap=false, banner suppressed. */
+      }
+      if (isSnap) {
+        let snapName = 'jellytunes';
+        try {
+          const report = await window.api.checkSnapPermissions();
+          snapName = report.snapName ?? snapName;
+        } catch {
+          /* keep default */
+        }
+        setState((prev) => ({
+          ...prev,
+          jellyfinConfig: { url, apiKey, userId },
+          userId,
+          isConnected: true,
+          isConnecting: false,
+          error: null,
+          snapKeyringIssue: {
+            command: `sudo snap connect ${snapName}:password-manager-service`,
+            snapName,
+          },
+        }));
+        onConnected(url, apiKey, userId);
+        return;
+      }
+    }
     setState((prev) => ({
       ...prev,
       jellyfinConfig: { url, apiKey, userId },
@@ -85,6 +128,9 @@ export function useJellyfinConnection(
       isConnected: true,
       isConnecting: false,
       error: null,
+      // Clear any stale banner — either the save succeeded or the
+      // underlying platform isn't snap (no banner to show).
+      snapKeyringIssue: null,
     }));
     onConnected(url, apiKey, userId);
   };
