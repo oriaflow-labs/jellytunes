@@ -22,4 +22,14 @@ This is where most of the work went. We wanted sync to be something you never ha
 
 ---
 
+### Installing on Linux (Snap)
+
+The Snap build isn't attached to this release — install or update it straight from the Snap Store instead, since a manually downloaded `.snap` won't carry the Store's signature:
+
+```
+snap install jellytunes --beta
+```
+
+---
+
 Want the full technical breakdown? See the [CHANGELOG.md](CHANGELOG.md).

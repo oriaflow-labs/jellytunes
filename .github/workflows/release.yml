@@ -158,7 +158,7 @@ jobs:
         shell: bash
         run: |
           missing=()
-          for ext in dmg exe AppImage deb snap; do
+          for ext in dmg exe AppImage deb; do
             if ! compgen -G "release/*.${ext}" > /dev/null; then
               missing+=("*.${ext}")
             fi
@@ -171,6 +171,12 @@ jobs:
           echo "All expected artifacts present:"
           ls -la release/
 
+      # The .snap is intentionally not attached here. Snaps are distributed
+      # through the Snap Store (published above), not as a standalone
+      # download — a .snap grabbed from a GitHub Release has no store
+      # assertion, so `snap install` refuses it unless you pass --dangerous,
+      # which also weakens confinement. See RELEASE_NOTES.md for the
+      # `snap install` instructions we point Linux/Snap users to instead.
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@3efcac8951299998593f871640ea8059d6818655
         with:
@@ -181,6 +187,5 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
-            release/*.snap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
