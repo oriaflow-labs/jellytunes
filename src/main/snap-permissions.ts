@@ -1,0 +1,101 @@
+/**
+ * Snap permission check (ORAIN-0578).
+ *
+ * Under Snap strict confinement, three interfaces are not auto-connected
+ * by snapd and therefore can be silently missing in sideload/devmode/beta
+ * installs and in badly-published releases:
+ *   - `password-manager-service` (OS keyring / libsecret — used for
+ *     encrypted session storage via Electron's safeStorage)
+ *   - `mount-observe` (read /proc/mounts — used to enumerate removable
+ *     volumes without exec'ing `df`)
+ *   - `removable-media` (read /media, /run/media, /mnt — used as a
+ *     fallback mount scan)
+ *
+ * This module exposes a pure function that takes the result of probing
+ * each interface (`connected | missing | unknown`) and produces a
+ * user-facing report listing the missing ones together with the exact
+ * `snap connect <snap>:<interface>` command to fix each.
+ *
+ * Pure: no `fs` / `process.env` access here — that lives in the IPC
+ * adapter (`main/index.ts`). This file is unit-tested by injecting probe
+ * results directly.
+ */
+
+export type SnapPermissionStatus = 'connected' | 'missing' | 'unknown';
+
+/** Result of probing a single interface. `command` is only set for `missing`. */
+export interface SnapPermissionProbeResult {
+  status: SnapPermissionStatus;
+}
+
+/** The three interfaces we currently probe for. Order matters: report order. */
+export type SnapPermissionInterface =
+  | 'password-manager-service'
+  | 'mount-observe'
+  | 'removable-media';
+
+export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = [
+  'password-manager-service',
+  'mount-observe',
+  'removable-media',
+];
+
+/** Stable default — `package.json:2` hardcodes the snap name as "jellytunes". */
+const DEFAULT_SNAP_NAME = 'jellytunes';
+
+/** One entry in the user-facing report (only `missing` entries get one). */
+export interface SnapPermissionReportEntry {
+  interface: SnapPermissionInterface;
+  status: 'missing';
+  command: string;
+}
+
+/** Full report shape returned to the renderer via IPC. */
+export interface SnapPermissionsReport {
+  isSnap: boolean;
+  /**
+   * Echoed back so the UI can display the exact snap name in instructions.
+   * `null` outside snap (no snap context to surface). Under snap, defaults to
+   * the hardcoded `jellytunes` name from `package.json:2` if detection
+   * somehow lost `SNAP_NAME` — defensive, avoids NPEs in command strings.
+   */
+  snapName: string | null;
+  /** Empty outside snap; under snap, only `missing` interfaces appear. */
+  interfaces: SnapPermissionReportEntry[];
+}
+
+export interface BuildSnapPermissionsReportInput {
+  isSnap: boolean;
+  snapName: string | null;
+  probes: Partial<Record<SnapPermissionInterface, SnapPermissionProbeResult>>;
+}
+
+/**
+ * Pure mapper — turns the result of the three probes into a user-facing
+ * report. Only `missing` entries are emitted, each carrying the exact
+ * `sudo snap connect <snap>:<interface>` command.
+ *
+ * Outside snap (`isSnap=false`) the function intentionally returns an
+ * empty report — there is no snap to connect plugs to, so any
+ * snap-specific UI/commands would be misleading.
+ */
+export function buildSnapPermissionsReport(
+  input: BuildSnapPermissionsReportInput,
+): SnapPermissionsReport {
+  if (!input.isSnap) {
+    return { isSnap: false, snapName: null, interfaces: [] };
+  }
+  const snapName = input.snapName ?? DEFAULT_SNAP_NAME;
+  const interfaces: SnapPermissionReportEntry[] = [];
+  for (const name of SNAP_PERMISSION_INTERFACES) {
+    const probe = input.probes[name];
+    if (probe?.status === 'missing') {
+      interfaces.push({
+        interface: name,
+        status: 'missing',
+        command: `sudo snap connect ${snapName}:${name}`,
+      });
+    }
+  }
+  return { isSnap: true, snapName, interfaces };
+}
