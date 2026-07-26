@@ -32,6 +32,8 @@ sudo snap connect jellytunes:hardware-observe
 
 The Snap Store manages application refreshes automatically. The app's manual release-update banner is therefore not used by the Snap build.
 
+FFmpeg is bundled with both the `.deb` and Snap packages, so no separate FFmpeg installation is required.
+
 ## Migrate to `.deb`
 
 Download the `.deb` asset from the [latest GitHub release](https://github.com/orainlabs/jellytunes/releases/latest), then install it with:

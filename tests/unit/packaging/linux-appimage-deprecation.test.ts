@@ -36,6 +36,12 @@ describe('Linux AppImage deprecation', () => {
     expect(installationGuide).toContain('stable');
   });
 
+  it('documents bundled FFmpeg for both maintained Linux channels', () => {
+    const installationGuide = readProjectFile('docs/INSTALLATION.md');
+
+    expect(installationGuide).toContain('FFmpeg is bundled with both the `.deb` and Snap packages');
+  });
+
   it('marks AppImage releases as legacy and links to migration instructions', () => {
     const releaseNotes = readProjectFile('RELEASE_NOTES.md');
 
