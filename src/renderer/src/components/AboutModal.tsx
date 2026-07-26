@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GradientMusicIcon } from './GradientMusicIcon';
+import { SnapPermissionsSection } from './SnapPermissionsSection';
 
 interface AboutModalProps {
   onClose: () => void;
@@ -16,6 +17,18 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
   const [upToDate, setUpToDate] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [isSnap, setIsSnap] = useState(false);
+  // ORAIN-0578 T2: full report (interfaces + commands) for the section
+  // shown below the analytics toggle. Empty report outside snap / when
+  // every probe is connected — `SnapPermissionsSection` renders nothing.
+  const [snapPermissions, setSnapPermissions] = useState<{
+    isSnap: boolean;
+    snapName: string | null;
+    interfaces: Array<{
+      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
+      status: 'missing';
+      command: string;
+    }>;
+  }>({ isSnap: false, snapName: null, interfaces: [] });
 
   useEffect(() => {
     window.api
@@ -40,6 +53,12 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
     window.api
       .getPreferences()
       .then((p) => setAnalyticsEnabled(p.analyticsEnabled))
+      .catch(() => {});
+    // ORAIN-0578 T2: load the permission report so the section can render
+    // the missing interfaces with their connect commands.
+    window.api
+      .checkSnapPermissions()
+      .then(setSnapPermissions)
       .catch(() => {});
   }, []);
 
@@ -216,6 +235,9 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
             Privacy Policy
           </a>
         </p>
+
+        {/* ── ORAIN-0578 T2: missing snap permissions, if any ── */}
+        <SnapPermissionsSection report={snapPermissions} />
 
         {/* ── Close ── */}
         <button

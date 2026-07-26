@@ -20,6 +20,13 @@ beforeEach(() => {
     logInfo: vi.fn(),
     getLogPath: vi.fn().mockResolvedValue('/mock/log'),
     isSnap: vi.fn().mockResolvedValue(false),
+    // ORAIN-0578 T2: AboutModal consults this on mount to render the
+    // missing-interfaces section. Empty report is the common case.
+    checkSnapPermissions: vi.fn().mockResolvedValue({
+      isSnap: false,
+      snapName: null,
+      interfaces: [],
+    }),
   };
   // @ts-expect-error — Mocking window.api for test environment
   window.api = mockApi;

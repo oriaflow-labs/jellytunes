@@ -24,6 +24,13 @@ function makeMockApi(opts: { isSnap: boolean }) {
     logInfo: vi.fn(),
     getLogPath: vi.fn().mockResolvedValue('/mock/log'),
     isSnap: vi.fn().mockResolvedValue(opts.isSnap),
+    // ORAIN-0578 T2: empty report — these tests only assert the snap
+    // indicator behavior; permissions section coverage lives in its own file.
+    checkSnapPermissions: vi.fn().mockResolvedValue({
+      isSnap: opts.isSnap,
+      snapName: opts.isSnap ? 'jellytunes' : null,
+      interfaces: [],
+    }),
   };
 }
 
