@@ -88,7 +88,7 @@ describe('SnapPermissionsSection', () => {
     };
     render(<SnapPermissionsSection report={allFour} />);
     expect(screen.getByText('sudo snap connect jellytunes:hardware-observe')).toBeInTheDocument();
-    expect(screen.getByText(/udev device database/i)).toBeInTheDocument();
+    expect(screen.getByText(/udev access for USB attach\/detach events/i)).toBeInTheDocument();
   });
 
   it('shows the restart notice', () => {

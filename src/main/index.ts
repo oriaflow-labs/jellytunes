@@ -12,10 +12,10 @@ import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker
 import { isSecureStorageAvailable } from './secure-storage';
 import {
   buildSnapPermissionsReport,
-  type SnapPermissionProbeResult,
   type SnapPermissionsReport,
   type BuildSnapPermissionsReportInput,
 } from './snap-permissions';
+import { runSnapConnectionProbes, type SnapctlResult } from './snap-connections';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -25,75 +25,29 @@ const snapEnv: SnapEnv = detectSnapEnv(process.env);
 const IS_SNAP: boolean = snapEnv.isSnap;
 
 // ─── Snap permission probes (ORAIN-0578) ─────────────────────────────────
-// `removable-media` lets us read /media, /run/media, /mnt. The probe is
-// positive only when at least one of those roots is visible to the
-// process — otherwise the interface is missing and the connect command
-// is what the user needs. None of them existing on the host means we
-// can't tell — report `unknown` so we don't nag.
-const REMOVABLE_MEDIA_ROOTS = ['/media', '/run/media', '/mnt'];
-function probeRemovableMedia(): SnapPermissionProbeResult {
-  let anyRootExists = false;
-  for (const root of REMOVABLE_MEDIA_ROOTS) {
-    if (!fs.existsSync(root)) continue;
-    anyRootExists = true;
-    try {
-      // Touch a directory listing — EACCES here means the plug isn't
-      // connected, even if the path itself exists in the fs namespace.
-      fs.readdirSync(root);
-      return { status: 'connected' };
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EACCES' || code === 'EPERM') {
-        return { status: 'missing' };
-      }
-      // Any other read error (transient IO, etc.) is inconclusive.
-    }
-  }
-  return anyRootExists ? { status: 'unknown' } : { status: 'unknown' };
+// Ask snapd directly rather than inferring each plug's state from what the
+// filesystem lets us touch. The filesystem probes this replaces were wrong
+// in practice: `hardware-observe` reported missing with the plug connected,
+// because the interface grants reading the udev data files without granting
+// a listing of /run/udev/data itself.
+const SNAPCTL_TIMEOUT_MS = 2000;
+function runSnapctl(args: string[]): SnapctlResult {
+  const result = spawnSync('snapctl', args, {
+    encoding: 'utf8',
+    timeout: SNAPCTL_TIMEOUT_MS,
+  });
+  return { status: result.status, error: result.error };
 }
 
-// `hardware-observe` gates reads of the udev device database. Without it,
-// every mountpoint under the removable-media roots looks like a plain
-// directory — we can't tell a real USB stick from a stale folder. The
-// probe mirrors `probeRemovableMedia`: EACCES/EPERM means the plug isn't
-// connected; a missing path on the host is inconclusive, not a problem.
-const UDEV_DATA_DIR = '/run/udev/data';
-function probeHardwareObserve(): SnapPermissionProbeResult {
-  if (!fs.existsSync(UDEV_DATA_DIR)) return { status: 'unknown' };
-  try {
-    fs.readdirSync(UDEV_DATA_DIR);
-    return { status: 'connected' };
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'EACCES' || code === 'EPERM') return { status: 'missing' };
-    // Any other read error (transient IO, etc.) is inconclusive.
-    return { status: 'unknown' };
-  }
-}
-
-/** `mount-observe` — gated read of the kernel mount table. */
-function probeMountObserve(): SnapPermissionProbeResult {
-  // `readLinuxMounts()` already returns null on EACCES / EPERM (and warns),
-  // exactly the failure mode that means the plug isn't connected.
-  return readLinuxMounts() === null ? { status: 'missing' } : { status: 'connected' };
-}
-
-/** `password-manager-service` — OS keyring reachable for safeStorage. */
-function probePasswordManagerService(): SnapPermissionProbeResult {
-  // `isSecureStorageAvailable()` already fails-safe on the basic_text and
-  // unknown backends, so a `false` here is the exact signal that
-  // libsecret/kwallet couldn't be reached via the desktop session.
-  return isSecureStorageAvailable(safeStorage) ? { status: 'connected' } : { status: 'missing' };
-}
+// Each probe is a blocking `spawnSync`, and the renderer asks twice (app
+// mount + About modal). `snap connect` only takes effect on the next
+// launch, so the answer is immutable for this process — probe once.
+let snapProbesCache: BuildSnapPermissionsReportInput['probes'] | null = null;
 
 /** Run all four probes (under snap only — caller gates on `IS_SNAP`). */
 function runSnapPermissionProbes(): BuildSnapPermissionsReportInput['probes'] {
-  return {
-    'password-manager-service': probePasswordManagerService(),
-    'mount-observe': probeMountObserve(),
-    'removable-media': probeRemovableMedia(),
-    'hardware-observe': probeHardwareObserve(),
-  };
+  snapProbesCache ??= runSnapConnectionProbes(runSnapctl);
+  return snapProbesCache;
 }
 
 // ─── Module-level track cache (ORAIN-0484) ─────────────────────────────────

@@ -10,13 +10,18 @@
  *     volumes without exec'ing `df`)
  *   - `removable-media` (read /media, /run/media, /mnt — used as a
  *     fallback mount scan)
- *   - `hardware-observe` (read /run/udev/data — used to tell a real
- *     removable device apart from an ordinary directory under those roots)
+ *   - `hardware-observe` (udev access — needed by the `usb-detection`
+ *     native addon in `device-watcher.ts`; without it the watcher falls
+ *     back to polling every 2s instead of reacting to attach/detach)
  *
  * This module exposes a pure function that takes the result of probing
  * each interface (`connected | missing | unknown`) and produces a
  * user-facing report listing the missing ones together with the exact
  * `snap connect <snap>:<interface>` command to fix each.
+ *
+ * The probes themselves live in `snap-connections.ts`, which asks snapd
+ * via `snapctl is-connected` — the state is not reliably inferable from
+ * what the filesystem lets the process touch.
  *
  * Pure: no `fs` / `process.env` access here — that lives in the IPC
  * adapter (`main/index.ts`). This file is unit-tested by injecting probe

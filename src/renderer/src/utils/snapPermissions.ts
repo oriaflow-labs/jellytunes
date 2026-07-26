@@ -53,7 +53,7 @@ export const SNAP_PERMISSION_META: Record<
     impact: 'USB drives and SD cards do not appear in the device list',
   },
   'hardware-observe': {
-    grants: 'read the udev device database',
-    impact: 'removable devices cannot be told apart from ordinary folders',
+    grants: 'udev access for USB attach/detach events',
+    impact: 'newly plugged drives take a few seconds longer to appear',
   },
 };
