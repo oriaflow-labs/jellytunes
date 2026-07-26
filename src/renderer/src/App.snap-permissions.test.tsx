@@ -60,7 +60,9 @@ function mockApi(overrides: Record<string, unknown> = {}): void {
     getSyncedTracks: vi.fn().mockResolvedValue([]),
     getTracksForItem: vi.fn().mockResolvedValue([]),
     getTracksForItems: vi.fn().mockResolvedValue([]),
-    startSync2: vi.fn().mockResolvedValue({ success: true, tracksCopied: 0, tracksFailed: [], errors: [] }),
+    startSync2: vi
+      .fn()
+      .mockResolvedValue({ success: true, tracksCopied: 0, tracksFailed: [], errors: [] }),
     cancelSync: vi.fn().mockResolvedValue({ cancelled: true }),
     onSyncProgress: vi.fn().mockReturnValue(() => {}),
     removeItems: vi.fn().mockResolvedValue({ removed: 0, errors: [] }),

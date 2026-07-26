@@ -20,9 +20,7 @@ interface SnapPermissionsBannerProps {
   report: SnapPermissionsReport;
 }
 
-export function SnapPermissionsBanner({
-  report,
-}: SnapPermissionsBannerProps): JSX.Element | null {
+export function SnapPermissionsBanner({ report }: SnapPermissionsBannerProps): JSX.Element | null {
   const [copied, setCopied] = useState(false);
 
   // Nothing to fix, or not a snap install — no nag, no false positives.

@@ -4,6 +4,7 @@
   "description": "Jellyfin music sync → MP3/FLAC devices",
   "homepage": "https://github.com/orainlabs/jellytunes",
   "main": "dist/main/index.js",
+  "desktopName": "jellytunes.desktop",
   "author": {
     "name": "Orain Labs",
     "email": "hi@orainlabs.dev"
@@ -140,7 +141,6 @@
       "icon": "assets/icons",
       "synopsis": "Jellyfin music sync → MP3/FLAC devices",
       "category": "AudioVideo",
-      "desktopName": "jellytunes.desktop",
       "syncDesktopName": true
     },
     "snapcraft": {
