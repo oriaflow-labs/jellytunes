@@ -68,6 +68,15 @@ jobs:
           sudo snap install lxd
           sudo lxd init --auto
           sudo usermod -a -G lxd "$USER"
+          # GitHub Actions runners ship Docker, which sets the DOCKER-USER
+          # iptables chain to DROP forwarded traffic by default. That blocks
+          # the lxdbr0 bridge `lxd init --auto` just created, so the managed
+          # snapcraft build instance can't reach the network to fetch its
+          # base image or packages ("A network related operation failed in a
+          # context of no network access"). Explicitly allow lxdbr0 traffic
+          # through: https://github.com/canonical/craft-providers/issues/172
+          sudo iptables -I DOCKER-USER -i lxdbr0 -j ACCEPT
+          sudo iptables -I DOCKER-USER -o lxdbr0 -j ACCEPT
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
