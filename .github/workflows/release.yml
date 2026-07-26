@@ -35,10 +35,14 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
-      # Set as a repo secret once the snap name is registered and approved by
-      # Canonical (out of scope for ORAIN-0572 — see task notes). Left unset,
-      # the "Publish snap to the Snap Store" step below is skipped so the
-      # rest of the release pipeline keeps working unchanged.
+      # Repo secret, generated with:
+      #   snapcraft export-login --channels=beta,candidate,stable -
+      # The credential is channel-scoped and expires (1 year by default), so a
+      # release that suddenly stops publishing is usually this. Registration of
+      # the snap name and this secret are tracked in ORAIN-0581. Left unset, the
+      # "Publish snap to the Snap Store" step below fails the release rather
+      # than skipping silently: a green release that published nothing is worse
+      # than a red one.
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
     steps:
@@ -97,9 +101,75 @@ jobs:
         env:
           npm_config_arch: ${{ matrix.arch }}
 
+      # Publishes to `beta`, not `stable`. Strict confinement has a failure mode
+      # no build-time check covers: the snap builds green and still fails at
+      # launch (ORAIN-0580, missing libnss3) or hits AppArmor denials at runtime
+      # (ORAIN-0571, blocked `df` and /proc/mounts). Promotion to `stable` is a
+      # human gate until CI runs a runtime smoke test on the built snap
+      # (ORAIN-0582), after which this can release straight to `stable`:
+      #   snapcraft release jellytunes <rev> stable
       - name: Publish snap to the Snap Store
-        if: matrix.platform == 'linux' && env.SNAPCRAFT_STORE_CREDENTIALS != ''
-        run: snapcraft upload --release=edge release/*.snap
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo "::error::SNAPCRAFT_STORE_CREDENTIALS is not configured, so the snap cannot be published. Set the repo secret with the output of 'snapcraft export-login --channels=beta,candidate,stable -' (the credential is channel-scoped and expires)."
+            exit 1
+          fi
+          snapcraft upload --release=beta release/*.snap
+
+      # Handed off to the `publish-release` job below rather than attached to
+      # the GitHub Release directly from here. With `fail-fast: false`, a
+      # failure on one platform must not let the other three still publish
+      # their assets straight to the release — that's a partial release that
+      # looks green at the tag level (ORAIN-0583).
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: jellytunes-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/*.snap
+          if-no-files-found: ignore
+          retention-days: 1
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release
+          pattern: jellytunes-*
+          merge-multiple: true
+
+      # Defense in depth against a leg that reports success but silently
+      # produced nothing (glob mismatch, electron-builder skipping a target,
+      # etc.) — `needs: build` alone only guards against a leg that reports
+      # failure.
+      - name: Verify all expected release artifacts are present
+        shell: bash
+        run: |
+          missing=()
+          for ext in dmg exe AppImage deb snap; do
+            if ! compgen -G "release/*.${ext}" > /dev/null; then
+              missing+=("*.${ext}")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing expected release artifact(s): ${missing[*]}. Refusing to publish a partial release."
+            ls -la release/ || true
+            exit 1
+          fi
+          echo "All expected artifacts present:"
+          ls -la release/
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@3efcac8951299998593f871640ea8059d6818655
