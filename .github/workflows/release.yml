@@ -84,6 +84,7 @@ jobs:
           npm_config_arch: ${{ matrix.arch }}
 
       - name: Build and package
+        shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "linux" ]; then
             # `usermod -a -G lxd` above doesn't take effect in the current shell
