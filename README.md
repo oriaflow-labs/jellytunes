@@ -62,13 +62,15 @@ JellyTunes is a desktop app for [Jellyfin](https://jellyfin.org) users who want 
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/orainlabs/jellytunes/releases):
 
-| Platform | File                  |
-| -------- | --------------------- |
-| macOS    | `.dmg`                |
-| Windows  | `.exe` installer      |
-| Linux    | `.AppImage` or `.deb` |
+| Platform | File                                             |
+| -------- | ------------------------------------------------ |
+| macOS    | `.dmg`                                           |
+| Windows  | `.exe` installer                                 |
+| Linux    | Snap (recommended), `.deb`, or AppImage (legacy) |
 
-Open the installer and follow the prompts. No additional setup is required — FFmpeg is bundled with the app.
+For Linux installation details and the AppImage migration path, see the [Linux installation and migration](docs/INSTALLATION.md) guide.
+
+Open the installer and follow the prompts. No additional setup is required for the `.deb` package — FFmpeg is bundled with the app. Snap users should follow the permission setup in the Linux guide for removable storage access.
 
 ### macOS: "App is damaged" or Gatekeeper warning
 

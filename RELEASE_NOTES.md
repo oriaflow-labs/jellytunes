@@ -22,13 +22,19 @@ This is where most of the work went. We wanted sync to be something you never ha
 
 ---
 
-### Installing on Linux (Snap)
+### Installing on Linux
+
+**AppImage (legacy):** The AppImage remains available temporarily, but it is deprecated on Ubuntu 24.04+ because Electron's user namespace sandbox can be blocked by the OS. New installations should use Snap or `.deb`; existing AppImage users should follow the [migration guide](docs/INSTALLATION.md).
+
+#### Snap (recommended)
 
 The Snap build isn't attached to this release — install or update it straight from the Snap Store instead, since a manually downloaded `.snap` won't carry the Store's signature:
 
 ```
 snap install jellytunes --beta
 ```
+
+After installation, connect the interfaces required for USB/SD sync and secure storage as described in the [migration guide](docs/INSTALLATION.md).
 
 ---
 
