@@ -1,7 +1,7 @@
 {
   "name": "jellytunes",
   "version": "0.5.0",
-  "description": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC",
+  "description": "Jellyfin music sync → MP3/FLAC devices",
   "homepage": "https://github.com/orainlabs/jellytunes",
   "main": "dist/main/index.js",
   "author": {
@@ -128,7 +128,7 @@
         "snap"
       ],
       "icon": "assets/icons",
-      "synopsis": "Sincronizador de música Jellyfin → dispositivos MP3/FLAC"
+      "synopsis": "Jellyfin music sync → MP3/FLAC devices"
     },
     "snapcraft": {
       "base": "core24",
