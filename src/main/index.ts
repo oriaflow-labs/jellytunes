@@ -10,6 +10,12 @@ import { createSyncCore, createApiClient, type CoverArtMode, type TrackInfo } fr
 import { detectSnapEnv, type SnapEnv } from './snap-env';
 import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
 import { isSecureStorageAvailable } from './secure-storage';
+import {
+  buildSnapPermissionsReport,
+  type SnapPermissionProbeResult,
+  type SnapPermissionsReport,
+  type BuildSnapPermissionsReportInput,
+} from './snap-permissions';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -17,6 +23,58 @@ import { isSecureStorageAvailable } from './secure-storage';
 // vars don't change at runtime.
 const snapEnv: SnapEnv = detectSnapEnv(process.env);
 const IS_SNAP: boolean = snapEnv.isSnap;
+
+// ─── Snap permission probes (ORAIN-0578) ─────────────────────────────────
+// `removable-media` lets us read /media, /run/media, /mnt. The probe is
+// positive only when at least one of those roots is visible to the
+// process — otherwise the interface is missing and the connect command
+// is what the user needs. None of them existing on the host means we
+// can't tell — report `unknown` so we don't nag.
+const REMOVABLE_MEDIA_ROOTS = ['/media', '/run/media', '/mnt'];
+function probeRemovableMedia(): SnapPermissionProbeResult {
+  let anyRootExists = false;
+  for (const root of REMOVABLE_MEDIA_ROOTS) {
+    if (!fs.existsSync(root)) continue;
+    anyRootExists = true;
+    try {
+      // Touch a directory listing — EACCES here means the plug isn't
+      // connected, even if the path itself exists in the fs namespace.
+      fs.readdirSync(root);
+      return { status: 'connected' };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EACCES' || code === 'EPERM') {
+        return { status: 'missing' };
+      }
+      // Any other read error (transient IO, etc.) is inconclusive.
+    }
+  }
+  return anyRootExists ? { status: 'unknown' } : { status: 'unknown' };
+}
+
+/** `mount-observe` — gated read of the kernel mount table. */
+function probeMountObserve(): SnapPermissionProbeResult {
+  // `readLinuxMounts()` already returns null on EACCES / EPERM (and warns),
+  // exactly the failure mode that means the plug isn't connected.
+  return readLinuxMounts() === null ? { status: 'missing' } : { status: 'connected' };
+}
+
+/** `password-manager-service` — OS keyring reachable for safeStorage. */
+function probePasswordManagerService(): SnapPermissionProbeResult {
+  // `isSecureStorageAvailable()` already fails-safe on the basic_text and
+  // unknown backends, so a `false` here is the exact signal that
+  // libsecret/kwallet couldn't be reached via the desktop session.
+  return isSecureStorageAvailable(safeStorage) ? { status: 'connected' } : { status: 'missing' };
+}
+
+/** Run all three probes (under snap only — caller gates on `IS_SNAP`). */
+function runSnapPermissionProbes(): BuildSnapPermissionsReportInput['probes'] {
+  return {
+    'password-manager-service': probePasswordManagerService(),
+    'mount-observe': probeMountObserve(),
+    'removable-media': probeRemovableMedia(),
+  };
+}
 
 // ─── Module-level track cache (ORAIN-0484) ─────────────────────────────────
 // Shared between sync:getTracksForItems and sync:analyzeDiff handlers.
@@ -1564,6 +1622,21 @@ ipcMain.handle('app:checkForUpdates', (_event, force = false) => performUpdateCh
 // ORAIN-0573: expose snap detection so the renderer can swap UI surfaces
 // (e.g. show "Managed via Snap Store" instead of a manual update button).
 ipcMain.handle('app:isSnap', () => IS_SNAP);
+
+// ORAIN-0578: run the three permission probes and return the user-facing
+// report. Outside snap, the gate inside `buildSnapPermissionsReport`
+// returns an empty report — no snap-specific UI should ever surface.
+ipcMain.handle('snap:checkPermissions', (): SnapPermissionsReport => {
+  if (!IS_SNAP) {
+    return { isSnap: false, snapName: null, interfaces: [] };
+  }
+  const probes = runSnapPermissionProbes();
+  return buildSnapPermissionsReport({
+    isSnap: true,
+    snapName: snapEnv.snapName,
+    probes,
+  });
+});
 
 void app.whenReady().then(() => {
   log.info('App ready');

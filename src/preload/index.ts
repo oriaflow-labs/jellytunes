@@ -311,6 +311,19 @@ const api = {
   // banner, show "Managed via Snap Store" in About).
   isSnap: (): Promise<boolean> => ipcRenderer.invoke('app:isSnap'),
 
+  // ORAIN-0578: list missing snap interfaces with their `snap connect`
+  // commands. Empty report outside snap — caller can safely ignore it
+  // (the check is purely a "what's wrong under strict confinement" aid).
+  checkSnapPermissions: (): Promise<{
+    isSnap: boolean;
+    snapName: string | null;
+    interfaces: Array<{
+      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
+      status: 'missing';
+      command: string;
+    }>;
+  }> => ipcRenderer.invoke('snap:checkPermissions'),
+
   // Preferences
   getPreferences: (): Promise<{ analyticsEnabled: boolean }> => ipcRenderer.invoke('prefs:get'),
   setPreferences: (prefs: { analyticsEnabled?: boolean }): Promise<void> =>
