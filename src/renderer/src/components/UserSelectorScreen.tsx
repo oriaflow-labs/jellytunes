@@ -18,7 +18,7 @@ export function UserSelectorScreen({
   return (
     <div
       data-testid="user-selector-screen"
-      className="h-screen flex items-center justify-center bg-surface text-on_surface"
+      className="h-full flex items-center justify-center bg-surface text-on_surface"
     >
       <div className="w-full max-w-md p-8">
         <div className="flex items-center gap-3 mb-8 justify-center">

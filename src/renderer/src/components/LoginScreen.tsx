@@ -1,6 +1,5 @@
 import { X } from 'lucide-react';
 import { GradientMusicIcon } from './GradientMusicIcon';
-import { SnapKeyringBanner } from './SnapKeyringBanner';
 
 interface LoginScreenProps {
   urlInput: string;
@@ -9,15 +8,6 @@ interface LoginScreenProps {
   onUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
   onSubmit: (url: string, apiKey: string) => void;
-  /**
-   * ORAIN-0578 T1: shown when `session:save` returned `encryption_unavailable`
-   * under snap. The parent owns the visibility decision (passing `null` is
-   * equivalent to `visible=false`).
-   */
-  snapKeyringIssue?: {
-    command: string;
-    snapName: string;
-  } | null;
 }
 
 export function LoginScreen({
@@ -27,12 +17,11 @@ export function LoginScreen({
   onUrlChange,
   onApiKeyChange,
   onSubmit,
-  snapKeyringIssue = null,
 }: LoginScreenProps): JSX.Element {
   return (
     <div
       data-testid="auth-screen"
-      className="h-screen flex items-center justify-center bg-surface text-on_surface"
+      className="h-full flex items-center justify-center bg-surface text-on_surface"
     >
       <div className="w-full max-w-md p-8">
         <div className="flex items-center gap-3 mb-8 justify-center">
@@ -41,11 +30,6 @@ export function LoginScreen({
         </div>
 
         <div className="bg-surface_container_low rounded-xl p-6 border border-outline_variant">
-          <SnapKeyringBanner
-            visible={snapKeyringIssue !== null}
-            command={snapKeyringIssue?.command ?? ''}
-            snapName={snapKeyringIssue?.snapName ?? 'jellytunes'}
-          />
           <h2 className="text-headline-md mb-4">Connect to Jellyfin</h2>
 
           <form

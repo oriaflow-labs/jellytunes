@@ -16,7 +16,7 @@ export function ConnectingScreen({ serverUrl }: ConnectingScreenProps): JSX.Elem
     : null;
 
   return (
-    <div className="h-screen flex items-center justify-center bg-surface text-on_surface">
+    <div className="h-full flex items-center justify-center bg-surface text-on_surface">
       <div className="text-center">
         <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
         <p className="text-body-md">

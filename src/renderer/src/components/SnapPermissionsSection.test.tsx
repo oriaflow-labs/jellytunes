@@ -67,6 +67,30 @@ describe('SnapPermissionsSection', () => {
     expect(screen.getAllByText(/mount-observe/).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('covers all four interfaces, including hardware-observe', () => {
+    // ORAIN-0578: hardware-observe is declared in the snapcraft plugs but was
+    // not probed or surfaced, so a missing udev permission was invisible.
+    const allFour = {
+      isSnap: true,
+      snapName: 'jellytunes',
+      interfaces: (
+        [
+          'password-manager-service',
+          'mount-observe',
+          'removable-media',
+          'hardware-observe',
+        ] as const
+      ).map((name) => ({
+        interface: name,
+        status: 'missing' as const,
+        command: `sudo snap connect jellytunes:${name}`,
+      })),
+    };
+    render(<SnapPermissionsSection report={allFour} />);
+    expect(screen.getByText('sudo snap connect jellytunes:hardware-observe')).toBeInTheDocument();
+    expect(screen.getByText(/udev device database/i)).toBeInTheDocument();
+  });
+
   it('shows the restart notice', () => {
     render(<SnapPermissionsSection report={sampleReport} />);
     expect(screen.getByText(/restart JellyTunes/i)).toBeInTheDocument();

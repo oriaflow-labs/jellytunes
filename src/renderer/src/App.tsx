@@ -20,8 +20,10 @@ import { FooterStats } from './components/FooterStats';
 import { ConnectingScreen } from './components/ConnectingScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { UserSelectorScreen } from './components/UserSelectorScreen';
+import { SnapPermissionsBanner } from './components/SnapPermissionsBanner';
 
 import { useDevices } from './hooks/useDevices';
+import { useSnapPermissions } from './hooks/useSnapPermissions';
 import { useTabSearch, UseTabSearchProvider } from './hooks/useTabSearch';
 import { useDeviceSelections } from './hooks/useDeviceSelections';
 import { useLibrary } from './hooks/useLibrary';
@@ -516,7 +518,7 @@ function AppConnected({
     sync.isSyncing && sync.syncFolder ? sync.syncFolder : deviceSelections.activeDevicePath;
 
   return (
-    <div className="h-screen flex flex-col bg-surface text-on_surface">
+    <div className="h-full flex flex-col bg-surface text-on_surface">
       <AppHeader
         isConnected={connection.isConnected}
         serverUrl={connection.jellyfinConfig?.url}
@@ -714,39 +716,53 @@ function AppConnected({
 
 function App(): JSX.Element {
   const connection = useJellyfinConnection((_url, _apiKey, _userId) => {});
+  // ORAIN-0578: the report describes this process's own confinement, so it
+  // is independent of the connection state. Rendering the banner above the
+  // screen switch — instead of inside one screen — is what keeps it
+  // reachable in every state; the previous keyring banner lived on the
+  // login screen but could only ever be raised after that screen unmounted.
+  const snapPermissions = useSnapPermissions();
 
-  if (!connection.isConnected && !connection.isConnecting && !connection.showUserSelector) {
+  const screen = ((): JSX.Element => {
+    if (!connection.isConnected && !connection.isConnecting && !connection.showUserSelector) {
+      return (
+        <LoginScreen
+          urlInput={connection.urlInput}
+          apiKeyInput={connection.apiKeyInput}
+          error={connection.error}
+          onUrlChange={connection.setUrlInput}
+          onApiKeyChange={connection.setApiKeyInput}
+          onSubmit={connection.connectToJellyfin}
+        />
+      );
+    }
+
+    if (connection.showUserSelector && connection.pendingConfig) {
+      return (
+        <UserSelectorScreen
+          users={connection.users}
+          serverUrl={connection.pendingConfig.url}
+          onSelect={connection.handleUserSelect}
+          onCancel={connection.handleUserSelectorCancel}
+        />
+      );
+    }
+
+    if (connection.isConnecting)
+      return <ConnectingScreen serverUrl={connection.urlInput || undefined} />;
+
     return (
-      <LoginScreen
-        urlInput={connection.urlInput}
-        apiKeyInput={connection.apiKeyInput}
-        error={connection.error}
-        onUrlChange={connection.setUrlInput}
-        onApiKeyChange={connection.setApiKeyInput}
-        onSubmit={connection.connectToJellyfin}
-        snapKeyringIssue={connection.snapKeyringIssue}
-      />
+      <UseTabSearchProvider jellyfinConfig={connection.jellyfinConfig} userId={connection.userId}>
+        <AppConnected connection={connection} />
+      </UseTabSearchProvider>
     );
-  }
-
-  if (connection.showUserSelector && connection.pendingConfig) {
-    return (
-      <UserSelectorScreen
-        users={connection.users}
-        serverUrl={connection.pendingConfig.url}
-        onSelect={connection.handleUserSelect}
-        onCancel={connection.handleUserSelectorCancel}
-      />
-    );
-  }
-
-  if (connection.isConnecting)
-    return <ConnectingScreen serverUrl={connection.urlInput || undefined} />;
+  })();
 
   return (
-    <UseTabSearchProvider jellyfinConfig={connection.jellyfinConfig} userId={connection.userId}>
-      <AppConnected connection={connection} />
-    </UseTabSearchProvider>
+    <div className="h-screen flex flex-col bg-surface text-on_surface">
+      <SnapPermissionsBanner report={snapPermissions} />
+      <div className="flex-1 min-h-0">{screen}</div>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 /**
  * Snap permission check (ORAIN-0578).
  *
- * Under Snap strict confinement, three interfaces are not auto-connected
+ * Under Snap strict confinement, four interfaces are not auto-connected
  * by snapd and therefore can be silently missing in sideload/devmode/beta
  * installs and in badly-published releases:
  *   - `password-manager-service` (OS keyring / libsecret — used for
@@ -10,6 +10,8 @@
  *     volumes without exec'ing `df`)
  *   - `removable-media` (read /media, /run/media, /mnt — used as a
  *     fallback mount scan)
+ *   - `hardware-observe` (read /run/udev/data — used to tell a real
+ *     removable device apart from an ordinary directory under those roots)
  *
  * This module exposes a pure function that takes the result of probing
  * each interface (`connected | missing | unknown`) and produces a
@@ -28,16 +30,18 @@ export interface SnapPermissionProbeResult {
   status: SnapPermissionStatus;
 }
 
-/** The three interfaces we currently probe for. Order matters: report order. */
+/** The four interfaces we currently probe for. Order matters: report order. */
 export type SnapPermissionInterface =
   | 'password-manager-service'
   | 'mount-observe'
-  | 'removable-media';
+  | 'removable-media'
+  | 'hardware-observe';
 
 export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = [
   'password-manager-service',
   'mount-observe',
   'removable-media',
+  'hardware-observe',
 ];
 
 /** Stable default — `package.json:2` hardcodes the snap name as "jellytunes". */

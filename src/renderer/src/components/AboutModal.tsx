@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { GradientMusicIcon } from './GradientMusicIcon';
 import { SnapPermissionsSection } from './SnapPermissionsSection';
+import {
+  EMPTY_SNAP_PERMISSIONS_REPORT,
+  type SnapPermissionsReport,
+} from '../utils/snapPermissions';
 
 interface AboutModalProps {
   onClose: () => void;
@@ -20,15 +24,9 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
   // ORAIN-0578 T2: full report (interfaces + commands) for the section
   // shown below the analytics toggle. Empty report outside snap / when
   // every probe is connected — `SnapPermissionsSection` renders nothing.
-  const [snapPermissions, setSnapPermissions] = useState<{
-    isSnap: boolean;
-    snapName: string | null;
-    interfaces: Array<{
-      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
-      status: 'missing';
-      command: string;
-    }>;
-  }>({ isSnap: false, snapName: null, interfaces: [] });
+  const [snapPermissions, setSnapPermissions] = useState<SnapPermissionsReport>(
+    EMPTY_SNAP_PERMISSIONS_REPORT,
+  );
 
   useEffect(() => {
     window.api

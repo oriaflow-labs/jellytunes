@@ -52,6 +52,25 @@ function probeRemovableMedia(): SnapPermissionProbeResult {
   return anyRootExists ? { status: 'unknown' } : { status: 'unknown' };
 }
 
+// `hardware-observe` gates reads of the udev device database. Without it,
+// every mountpoint under the removable-media roots looks like a plain
+// directory — we can't tell a real USB stick from a stale folder. The
+// probe mirrors `probeRemovableMedia`: EACCES/EPERM means the plug isn't
+// connected; a missing path on the host is inconclusive, not a problem.
+const UDEV_DATA_DIR = '/run/udev/data';
+function probeHardwareObserve(): SnapPermissionProbeResult {
+  if (!fs.existsSync(UDEV_DATA_DIR)) return { status: 'unknown' };
+  try {
+    fs.readdirSync(UDEV_DATA_DIR);
+    return { status: 'connected' };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EACCES' || code === 'EPERM') return { status: 'missing' };
+    // Any other read error (transient IO, etc.) is inconclusive.
+    return { status: 'unknown' };
+  }
+}
+
 /** `mount-observe` — gated read of the kernel mount table. */
 function probeMountObserve(): SnapPermissionProbeResult {
   // `readLinuxMounts()` already returns null on EACCES / EPERM (and warns),
@@ -67,12 +86,13 @@ function probePasswordManagerService(): SnapPermissionProbeResult {
   return isSecureStorageAvailable(safeStorage) ? { status: 'connected' } : { status: 'missing' };
 }
 
-/** Run all three probes (under snap only — caller gates on `IS_SNAP`). */
+/** Run all four probes (under snap only — caller gates on `IS_SNAP`). */
 function runSnapPermissionProbes(): BuildSnapPermissionsReportInput['probes'] {
   return {
     'password-manager-service': probePasswordManagerService(),
     'mount-observe': probeMountObserve(),
     'removable-media': probeRemovableMedia(),
+    'hardware-observe': probeHardwareObserve(),
   };
 }
 

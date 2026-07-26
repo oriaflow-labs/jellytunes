@@ -162,8 +162,10 @@ describe('LoginScreen', () => {
     expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
   });
 
-  // 7. ORAIN-0578 T1: keyring banner hidden by default
-  it('does not show the snap keyring banner by default', () => {
+  // 7. ORAIN-0578: the snap permission banner is owned by `App`, not by this
+  // screen. Keeping it here is what made it unreachable — it could only be
+  // raised once the connection succeeded, which unmounts this screen.
+  it('does not render any snap banner itself', () => {
     const props = {
       urlInput: '',
       apiKeyInput: '',
@@ -173,27 +175,7 @@ describe('LoginScreen', () => {
       onSubmit: vi.fn(),
     };
     render(<LoginScreen {...props} />);
+    expect(screen.queryByTestId('snap-permissions-banner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('snap-keyring-banner')).not.toBeInTheDocument();
-  });
-
-  // 8. ORAIN-0578 T1: keyring banner rendered when issue is provided
-  it('shows the snap keyring banner when snapKeyringIssue is provided', () => {
-    const props = {
-      urlInput: '',
-      apiKeyInput: '',
-      error: null as string | null,
-      onUrlChange: vi.fn(),
-      onApiKeyChange: vi.fn(),
-      onSubmit: vi.fn(),
-      snapKeyringIssue: {
-        command: 'sudo snap connect jellytunes:password-manager-service',
-        snapName: 'jellytunes',
-      },
-    };
-    render(<LoginScreen {...props} />);
-    expect(screen.getByTestId('snap-keyring-banner')).toBeInTheDocument();
-    expect(
-      screen.getByText('sudo snap connect jellytunes:password-manager-service'),
-    ).toBeInTheDocument();
   });
 });

@@ -9,28 +9,11 @@
 // no false positives.
 
 import { useState } from 'react';
-
-interface SnapPermissionReportEntry {
-  interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
-  status: 'missing';
-  command: string;
-}
-
-interface SnapPermissionsReport {
-  isSnap: boolean;
-  snapName: string | null;
-  interfaces: SnapPermissionReportEntry[];
-}
+import { SNAP_PERMISSION_META, type SnapPermissionsReport } from '../utils/snapPermissions';
 
 interface SnapPermissionsSectionProps {
   report: SnapPermissionsReport;
 }
-
-const INTERFACE_LABEL: Record<SnapPermissionReportEntry['interface'], string> = {
-  'password-manager-service': 'password-manager-service — OS keyring',
-  'mount-observe': 'mount-observe — read /proc/mounts',
-  'removable-media': 'removable-media — read /media, /run/media, /mnt',
-};
 
 export function SnapPermissionsSection({
   report,
@@ -65,7 +48,9 @@ export function SnapPermissionsSection({
       <ul className="space-y-2 mb-3">
         {report.interfaces.map((entry) => (
           <li key={entry.interface} className="flex flex-col gap-1">
-            <span className="text-body-sm">{INTERFACE_LABEL[entry.interface]}</span>
+            <span className="text-body-sm">
+              {entry.interface} — {SNAP_PERMISSION_META[entry.interface].grants}
+            </span>
             <code
               data-testid={`snap-permissions-command-${entry.interface}`}
               className="font-mono text-body-sm bg-surface_container_highest text-on_surface px-3 py-2 rounded select-all break-all"

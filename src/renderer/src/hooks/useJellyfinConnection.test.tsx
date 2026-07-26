@@ -232,22 +232,13 @@ describe('useJellyfinConnection', () => {
     });
   });
 
-  describe('snapKeyringIssue banner (ORAIN-0578 T1)', () => {
-    it('surfaces snapKeyringIssue when saveSession reports encryption_unavailable under snap', async () => {
+  describe('save failures (ORAIN-0578)', () => {
+    it('still connects when session:save reports encryption_unavailable', async () => {
+      // The snap keyring warning is no longer driven from here — it comes
+      // from the permission report (see useSnapPermissions + the App-level
+      // banner test). A failed save must not block the connection.
       mockApi.loadSession.mockResolvedValue(null);
       mockApi.saveSession.mockResolvedValue({ success: false, reason: 'encryption_unavailable' });
-      mockApi.isSnap.mockResolvedValue(true);
-      mockApi.checkSnapPermissions.mockResolvedValue({
-        isSnap: true,
-        snapName: 'jellytunes',
-        interfaces: [
-          {
-            interface: 'password-manager-service',
-            status: 'missing',
-            command: 'sudo snap connect jellytunes:password-manager-service',
-          },
-        ],
-      });
       mockFetch
         .mockResolvedValueOnce({
           ok: true,
@@ -258,110 +249,16 @@ describe('useJellyfinConnection', () => {
           json: () => Promise.resolve({ Id: 'user-1', Name: 'Test User' }),
         });
 
-      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+      const onConnected = vi.fn();
+      const { result } = renderHook(() => useJellyfinConnection(onConnected));
 
       await act(async () => {
         await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
       });
 
       expect(result.current.isConnected).toBe(true);
-      expect(result.current.snapKeyringIssue).toEqual({
-        command: 'sudo snap connect jellytunes:password-manager-service',
-        snapName: 'jellytunes',
-      });
-    });
-
-    it('does NOT surface the banner when encryption_unavailable but NOT under snap', async () => {
-      // Non-snap platforms (macOS/Windows/Linux without snap) fail this
-      // path differently — there's no banner there.
-      mockApi.loadSession.mockResolvedValue(null);
-      mockApi.saveSession.mockResolvedValue({ success: false, reason: 'encryption_unavailable' });
-      mockApi.isSnap.mockResolvedValue(false);
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ ServerName: 'Test Server' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ Id: 'user-1', Name: 'Test User' }),
-        });
-
-      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
-
-      await act(async () => {
-        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
-      });
-
-      expect(result.current.isConnected).toBe(true);
-      expect(result.current.snapKeyringIssue).toBeNull();
-      // isSnap IPC is consulted before surfacing the banner — make sure we
-      // actually called it (suppression test, not silent skip).
-      expect(mockApi.isSnap).toHaveBeenCalled();
-    });
-
-    it('clears the banner after a subsequent successful save', async () => {
-      // First connection: keyring missing → banner shown.
-      mockApi.loadSession.mockResolvedValue(null);
-      mockApi.saveSession.mockResolvedValueOnce({
-        success: false,
-        reason: 'encryption_unavailable',
-      });
-      mockApi.isSnap.mockResolvedValue(true);
-      mockApi.checkSnapPermissions.mockResolvedValue({
-        isSnap: true,
-        snapName: 'jellytunes',
-        interfaces: [
-          {
-            interface: 'password-manager-service',
-            status: 'missing',
-            command: 'sudo snap connect jellytunes:password-manager-service',
-          },
-        ],
-      });
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ ServerName: 'Test Server' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ Id: 'user-1', Name: 'Test User' }),
-        });
-
-      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
-      await act(async () => {
-        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
-      });
-      expect(result.current.snapKeyringIssue).not.toBeNull();
-
-      // User restarts the app, keyring is now available — second connect
-      // succeeds. The banner must clear on the next save, otherwise it
-      // would be a stuck-forever sticky notice.
-      mockApi.saveSession.mockResolvedValueOnce({ success: true });
-      mockApi.loadSession.mockResolvedValue(null);
-      // Force re-render with a fresh state via disconnect + reconnect.
-      act(() => {
-        result.current.disconnect();
-      });
-
-      // Reset the loadSession mock so the auto-connect-on-mount effect
-      // doesn't fire (we want to drive the reconnect manually).
-      mockApi.loadSession.mockResolvedValue(null);
-
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ ServerName: 'Test Server' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ Id: 'user-1', Name: 'Test User' }),
-        });
-      await act(async () => {
-        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
-      });
-      expect(result.current.snapKeyringIssue).toBeNull();
+      expect(result.current.error).toBeNull();
+      expect(onConnected).toHaveBeenCalledWith('https://jellyfin.test', 'test-key', 'user-1');
     });
   });
 });

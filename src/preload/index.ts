@@ -318,7 +318,11 @@ const api = {
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
+      interface:
+        | 'password-manager-service'
+        | 'mount-observe'
+        | 'removable-media'
+        | 'hardware-observe';
       status: 'missing';
       command: string;
     }>;

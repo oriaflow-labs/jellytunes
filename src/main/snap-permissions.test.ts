@@ -1,7 +1,8 @@
 // src/main/snap-permissions.test.ts
 // Unit tests for the pure function that maps snap permission probes
-// (keyring, mount-observe, removable-media) to a user-facing list of
-// missing interfaces + the exact `snap connect` command to fix each one.
+// (keyring, mount-observe, removable-media, hardware-observe) to a
+// user-facing list of missing interfaces + the exact `snap connect`
+// command to fix each one.
 //
 // ORAIN-0578: tests cover every combination of probe results (each
 // interface reports connected | missing | unknown; only missing produces
@@ -119,6 +120,26 @@ describe('buildSnapPermissionsReport', () => {
       ]);
     });
 
+    it('reports hardware-observe missing with command', () => {
+      const report = buildSnapPermissionsReport({
+        isSnap: true,
+        snapName: 'jellytunes',
+        probes: {
+          'password-manager-service': { status: 'connected' },
+          'mount-observe': { status: 'connected' },
+          'removable-media': { status: 'connected' },
+          'hardware-observe': { status: 'missing' },
+        },
+      });
+      expect(report.interfaces).toEqual([
+        {
+          interface: 'hardware-observe',
+          status: 'missing',
+          command: 'sudo snap connect jellytunes:hardware-observe',
+        },
+      ]);
+    });
+
     it('reports unknown state without a command (do not nag on inconclusive probes)', () => {
       const report = buildSnapPermissionsReport({
         isSnap: true,
@@ -154,7 +175,7 @@ describe('buildSnapPermissionsReport', () => {
       expect(report.interfaces[1].command).toBe('sudo snap connect jellytunes:mount-observe');
     });
 
-    it('reports all three missing with all three commands', () => {
+    it('reports all four missing with all four commands in stable order', () => {
       const report = buildSnapPermissionsReport({
         isSnap: true,
         snapName: 'jellytunes',
@@ -162,14 +183,28 @@ describe('buildSnapPermissionsReport', () => {
           'password-manager-service': { status: 'missing' },
           'mount-observe': { status: 'missing' },
           'removable-media': { status: 'missing' },
+          'hardware-observe': { status: 'missing' },
         },
       });
-      expect(report.interfaces).toHaveLength(3);
+      expect(report.interfaces).toHaveLength(4);
       expect(report.interfaces.map((i) => i.command)).toEqual([
         'sudo snap connect jellytunes:password-manager-service',
         'sudo snap connect jellytunes:mount-observe',
         'sudo snap connect jellytunes:removable-media',
+        'sudo snap connect jellytunes:hardware-observe',
       ]);
+    });
+
+    it('skips interfaces with no probe result at all', () => {
+      // `probes` is Partial — an interface the adapter never probed must not
+      // be reported as missing (that would print a command for something we
+      // have no evidence about).
+      const report = buildSnapPermissionsReport({
+        isSnap: true,
+        snapName: 'jellytunes',
+        probes: { 'hardware-observe': { status: 'missing' } },
+      });
+      expect(report.interfaces.map((i) => i.interface)).toEqual(['hardware-observe']);
     });
 
     it('skips unknown and only emits missing commands', () => {
