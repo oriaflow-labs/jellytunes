@@ -12,6 +12,7 @@ import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker
 import { createSecureStorageProvider, type StorageProvider } from './secure-storage';
 import { createSecretStore } from './secret-store';
 import { createSecretToolRunner } from './secret-tool.adapter';
+import { createElectronLogger } from './logger-types';
 import {
   buildSnapPermissionsReport,
   type SnapPermissionsReport,
@@ -707,7 +708,10 @@ let sessionStorageProvider: StorageProvider | null = null;
  * Exported for the test suite — production code never imports it.
  */
 export async function initSecureStorageProvider(): Promise<StorageProvider | null> {
-  const secretRunner = createSecretToolRunner();
+  // ORAIN-0601 AC1: wire the structured logger so every secret-tool
+  // failure is recorded (status, stderr classification, parent env)
+  // without ever logging the plaintext session from a lookup stdout.
+  const secretRunner = createSecretToolRunner({ logger: createElectronLogger() });
   const secretStore = createSecretStore({ runner: secretRunner });
   // Resolve the probe exactly once at startup. The selector is sync, so we
   // wait here and feed the boolean in as `secretToolAvailable` — no
