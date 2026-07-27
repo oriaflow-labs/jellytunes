@@ -16,29 +16,36 @@ import { createSecretToolRunner } from './secret-tool.adapter';
 import type { Logger } from './logger-types';
 import type { SecretToolResult } from './secret-store';
 
-function makeCapturingLogger(): Logger & {
-  records: Array<{
-    level: 'error' | 'warn' | 'info' | 'debug';
-    message: string;
-    context?: unknown;
-  }>;
-} {
-  const records: Array<{
-    level: 'error' | 'warn' | 'info' | 'debug';
-    message: string;
-    context?: unknown;
-  }> = [];
+interface CapturedRecord {
+  level: 'error' | 'warn' | 'info' | 'debug';
+  message: string;
+  context?: unknown;
+}
+
+/**
+ * Build a Logger fixture strictly typed against the `Logger` contract.
+ * The `records` array lives on a separate handle so test code never
+ * widens the Logger interface (which would mask bleeds to production —
+ * ORAIN-0601 review — LOW finding).
+ */
+interface CapturingLoggerHandle {
+  logger: Logger;
+  records: CapturedRecord[];
+}
+
+function makeCapturingLogger(): CapturingLoggerHandle {
+  const records: CapturedRecord[] = [];
   const factory =
     (level: 'error' | 'warn' | 'info' | 'debug') => (message: string, context?: unknown) => {
       records.push({ level, message, context });
     };
-  return {
-    records,
+  const logger: Logger = {
     error: factory('error'),
     warn: factory('warn'),
     info: factory('info'),
     debug: factory('debug'),
   };
+  return { logger, records };
 }
 
 describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
@@ -60,7 +67,7 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     // even where secret-tool isn't installed. The lookup stdout will
     // contain "super-secret" — if the adapter ever logged it, this test
     // would catch the regression.
-    const logger = makeCapturingLogger();
+    const { logger, records } = makeCapturingLogger();
     const runner = createSecretToolRunner({ logger, bin: 'sh', timeoutMs: 2000 });
 
     const handle = runner(['-c', 'echo super-secret; exit 0']);
@@ -71,30 +78,34 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     expect(result.stdout).toBe('super-secret\n');
     // No logger record references the secret. The lookup stdout carrying
     // the plaintext must never enter the log record.
-    const dump = JSON.stringify(logger.records);
+    const dump = JSON.stringify(records);
     expect(dump).not.toContain('super-secret');
     expect(dump).not.toContain('lookup-stdin-payload');
     // The success path must not produce a log record — only failures are loud.
-    expect(logger.records.length).toBe(0);
+    expect(records.length).toBe(0);
   });
 
   it('logs an error record when the runner returns status:null (timeout)', () => {
-    const logger = makeCapturingLogger();
-    // Build a runner whose get result() always throws to simulate timeout
-    // — adapter should report this through logger.error before returning.
-    const runner = createSecretToolRunner({ logger, timeoutMs: 1 });
+    const { logger, records } = makeCapturingLogger();
+    // Deterministic timeout simulation via a spawn override (ORAIN-0601
+    // review — LOW finding): instead of racing wall-clock with
+    // `timeoutMs:1`, we stub spawnSync to return `status:null` directly,
+    // which is exactly what the real timeout produces after the child is
+    // SIGTERM'd by Node. The adapter must classify this as `timeout`.
+    const runner = createSecretToolRunner({
+      logger,
+      bin: 'never-runs',
+      spawn: () => ({ status: null }),
+    });
 
-    const handle = runner(['lookup', 'service', 'jellytunes']);
+    const handle = runner({ args: ['lookup', 'service', 'jellytunes'], operationHint: 'lookup' });
     handle.write('');
-    // Drive spawnSync: it will hit timeout, status:null. The adapter must
-    // log this through `logger.error` (not console.log).
     const result = handle.result;
 
-    // Either timeout or ENOENT in CI env — both produce a logger record.
-    expect(logger.records.length).toBeGreaterThan(0);
-    const record = logger.records[0]!;
-    expect(['error', 'warn']).toContain(record.level);
-    // Record carries diagnostic context (sanitised stderr + env vars).
+    expect(result.status).toBeNull();
+    expect(records.length).toBeGreaterThan(0);
+    const record = records[0]!;
+    expect(record.level).toBe('error');
     const ctx = record.context as Record<string, unknown>;
     expect(ctx).toBeDefined();
     expect(ctx['operation']).toBe('lookup');
@@ -102,7 +113,6 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     // PATH / DBUS / XDG values observed by parent process are included.
     expect(typeof ctx['parentEnv'] === 'object' && ctx['parentEnv'] !== null).toBe(true);
     const parentEnv = ctx['parentEnv'] as Record<string, unknown>;
-    // DBus may be missing in some CI envs — accept either presence or absent marker.
     expect('PATH' in parentEnv || 'PATH_UNSET' in parentEnv).toBe(true);
     expect(
       'DBUS_SESSION_BUS_ADDRESS' in parentEnv || 'DBUS_SESSION_BUS_ADDRESS_UNSET' in parentEnv,
@@ -111,34 +121,44 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     // stdout of lookup is NEVER logged (plaintext session protection).
     const dump = JSON.stringify(record);
     expect(dump).not.toContain('plaintext');
-    // status:null ⇒ stderr classified as either timeout or spawn_error —
-    // both shapes prove we logged. The exact label depends on whether
-    // child.error fired (spawn_error) or only the timeout did.
-    expect(ctx['stderrClassification']).toMatch(/timeout|spawn_error/);
-    expect(result).toBeDefined();
+    // With a deterministic spawn stub returning status:null and no
+    // child.error, the adapter classifies this as `timeout` (not
+    // `spawn_error`). This is exactly what we want — the timeout branch
+    // produces a record distinct from the spawn-error branch.
+    expect(ctx['stderrClassification']).toBe('timeout');
   });
 
   it('logs an error record on non-zero exit code (ENOENT-style spawn failure)', () => {
-    const logger = makeCapturingLogger();
-    const runner = createSecretToolRunner({ logger, bin: '/nonexistent/path/secret-tool' });
+    const { logger, records } = makeCapturingLogger();
+    // Deterministic spawn-error simulation: stub spawnSync to return
+    // status:null + child.error.message as Node does for ENOENT.
+    const runner = createSecretToolRunner({
+      logger,
+      bin: 'never-runs',
+      spawn: () => ({ status: null, error: new Error('spawn ENOENT') }),
+    });
 
-    const handle = runner(['store', '--label=jellytunes-session', 'service', 'jellytunes']);
+    const handle = runner({
+      args: ['store', '--label=jellytunes-session', 'service', 'jellytunes'],
+      operationHint: 'store',
+    });
     handle.write('hello');
     const result = handle.result;
 
     // ENOENT path produces status:null with child.error.message
     expect(result.status).toBeNull();
-    expect(logger.records.length).toBeGreaterThan(0);
-    const record = logger.records[0]!;
+    expect(records.length).toBeGreaterThan(0);
+    const record = records[0]!;
     expect(record.level).toBe('error');
     const ctx = record.context as Record<string, unknown>;
     expect(ctx['operation']).toBe('store');
     // child.error.message is propagated (truncated)
     expect(typeof ctx['errorMessage']).toBe('string');
+    expect(ctx['stderrClassification']).toBe('spawn_error');
   });
 
   it('classifies stderr into a sanitised category, never echoing the full stderr', () => {
-    const logger = makeCapturingLogger();
+    const { logger, records } = makeCapturingLogger();
     // Use a shell command that emits a long stderr string we want bounded.
     // secret-tool is unavailable in CI; we just need any stderr capture.
     // 500-byte payload ensures STDERR_LOG_CAP truncates it.
@@ -150,8 +170,8 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     const result = handle.result;
 
     expect(result.status).toBe(2);
-    expect(logger.records.length).toBeGreaterThan(0);
-    const record = logger.records[0]!;
+    expect(records.length).toBeGreaterThan(0);
+    const record = records[0]!;
     const ctx = record.context as Record<string, unknown>;
     // stderrClassification is a sanitised category — never the raw stderr.
     expect(ctx['stderrClassification']).toMatch(/non_zero_exit|timeout|spawn_error/);
@@ -163,39 +183,42 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
   });
 
   it('does not log on lookup success (no noise in normal operation)', () => {
-    const logger = makeCapturingLogger();
+    const { logger, records } = makeCapturingLogger();
     const runner = createSecretToolRunner({ logger, bin: 'sh', timeoutMs: 2000 });
 
     const handle = runner(['-c', 'echo ok; exit 0']);
     handle.write('');
     void handle.result;
 
-    expect(logger.records.length).toBe(0);
+    expect(records.length).toBe(0);
   });
 
   it('accepts the logger through dependency injection (no module-level console use)', () => {
     // AC1 specifies "via logger estructurado (no console.log)". We prove
     // the adapter only knows about logger via the options bag — there is
     // no module-level console reference.
-    const logger = makeCapturingLogger();
+    const { logger } = makeCapturingLogger();
     expect(() => createSecretToolRunner({ logger })).not.toThrow();
   });
 
-  it('redacts PATH-like secrets that may have leaked into DBUS / XDG values', () => {
+  it('truncates PATH-like secrets that may have leaked into DBUS / XDG values', () => {
     // AC1: env var values are sensitive in some setups (tokens in PATH,
-    // bus address carrying session cookies). The logger must truncate
-    // the parentEnv values to a safe length before recording.
+    // bus address carrying session cookies). The logger must bound the
+    // parentEnv values to a safe length before recording — note we
+    // TRUNCATE (length-bound), not redact (substitution). See the
+    // helper-level sanitisation in `sanitiseDbusAddress` for the only
+    // place a non-truncation shape reduction is applied.
     process.env.PATH = 'x'.repeat(200);
     process.env.DBUS_SESSION_BUS_ADDRESS = 'y'.repeat(200);
-    const logger = makeCapturingLogger();
+    const { logger, records } = makeCapturingLogger();
     const runner = createSecretToolRunner({ logger, bin: '/nonexistent' });
 
     const handle = runner(['store', '--label=x', 'service', 'jellytunes']);
     handle.write('h');
     void handle.result;
 
-    expect(logger.records.length).toBeGreaterThan(0);
-    const record = logger.records[0]!;
+    expect(records.length).toBeGreaterThan(0);
+    const record = records[0]!;
     const ctx = record.context as Record<string, unknown>;
     const parentEnv = ctx['parentEnv'] as Record<string, string>;
     // Truncated to a safe upper bound — never the raw multi-hundred-byte value.

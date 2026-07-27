@@ -50,12 +50,10 @@ describe('createSecretStore', () => {
 
       await store.store('my-secret');
 
-      expect(runner).toHaveBeenCalledWith([
-        'store',
-        '--label=jellytunes-session',
-        'service',
-        'jellytunes',
-      ]);
+      expect(runner).toHaveBeenCalledWith({
+        args: ['store', '--label=jellytunes-session', 'service', 'jellytunes'],
+        operationHint: 'store',
+      });
     });
 
     it('sends the secret over stdin, never as an argv element', async () => {
@@ -66,7 +64,10 @@ describe('createSecretStore', () => {
 
       await store.store('super-secret-api-key');
 
-      const args = runner.mock.calls[0]![0];
+      const call = runner.mock.calls[0]![0];
+      const args: readonly string[] = Array.isArray(call)
+        ? (call as readonly string[])
+        : (call as { args: readonly string[] }).args;
       expect(args).not.toContain('super-secret-api-key');
       expect(args).not.toContain('super-secret');
       // Every part of argv must be a literal — no dynamic interpolation
@@ -134,8 +135,11 @@ describe('createSecretStore', () => {
       // the store reads result. The test mocks just simulate both steps.
       const captured: string[] = [];
       const order: string[] = [];
-      const runner: SecretToolRunner = (args) => {
-        order.push(`runner(${args.join(' ')})`);
+      const runner: SecretToolRunner = (call) => {
+        const argv: readonly string[] = Array.isArray(call)
+          ? (call as readonly string[])
+          : (call as { args: readonly string[] }).args;
+        order.push(`runner(${argv.join(' ')})`);
         return {
           get result(): SecretToolHandle['result'] {
             order.push('read result');
@@ -165,7 +169,10 @@ describe('createSecretStore', () => {
 
       const result = await store.lookup();
 
-      expect(runner).toHaveBeenCalledWith(['lookup', 'service', 'jellytunes']);
+      expect(runner).toHaveBeenCalledWith({
+        args: ['lookup', 'service', 'jellytunes'],
+        operationHint: 'lookup',
+      });
       expect(result).toBe('recovered');
     });
 
@@ -202,7 +209,10 @@ describe('createSecretStore', () => {
 
       await store.clear();
 
-      expect(runner).toHaveBeenCalledWith(['clear', 'service', 'jellytunes']);
+      expect(runner).toHaveBeenCalledWith({
+        args: ['clear', 'service', 'jellytunes'],
+        operationHint: 'clear',
+      });
     });
 
     it('does not throw when there is nothing to clear (exit code 1)', async () => {
@@ -283,7 +293,10 @@ describe('createSecretStore', () => {
       await store.clear();
 
       for (const call of runner.mock.calls) {
-        const args = call[0];
+        const raw = call[0];
+        const args: readonly string[] = Array.isArray(raw)
+          ? (raw as readonly string[])
+          : (raw as { args: readonly string[] }).args;
         expect(args).toContain('service');
         expect(args).toContain('jellytunes');
       }

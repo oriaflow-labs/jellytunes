@@ -51,7 +51,25 @@ function readResult(handle: SecretToolHandle): SecretToolResult {
   return handle.result;
 }
 
-export type SecretToolRunner = (args: readonly string[]) => SecretToolHandle;
+/**
+ * Run a `secret-tool` subprocess. Args are forwarded to the CLI; `operationHint`
+ * is purely for ORAIN-0601 logging — it lets the caller (`secret-store`)
+ * label `lookup` invocations as `lookup` vs `isAvailable` so the diagnostic
+ * log can distinguish a boot-time probe from a real session restore.
+ * Defaults to `args[0]` when omitted.
+ */
+export interface RunnerInvocation {
+  args: readonly string[];
+  operationHint?: string;
+}
+
+/**
+ * Runner contract. Accepts EITHER a `RunnerInvocation` (preferred — the
+ * adapter can label the call) OR a plain `readonly string[]` for backward
+ * compatibility with legacy test mocks. Production callers always pass
+ * the `RunnerInvocation` shape from `secret-store`.
+ */
+export type SecretToolRunner = (call: RunnerInvocation | readonly string[]) => SecretToolHandle;
 
 export interface SecretStoreOptions {
   runner: SecretToolRunner;
@@ -124,7 +142,10 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
       // Validate before invoking the runner — keeps oversized payloads out
       // of the subprocess entirely.
       assertSecretFits(secret);
-      const handle = runner(['store', `--label=${LABEL}`, ...ATTRS]);
+      const handle = runner({
+        args: ['store', `--label=${LABEL}`, ...ATTRS],
+        operationHint: 'store',
+      });
       // Pipe the secret in one chunk — payload is small (<1 KB), single
       // write is simpler than streaming. Must happen BEFORE we read
       // `handle.result`, because the production adapter evaluates result
@@ -136,7 +157,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
     },
 
     async lookup(): Promise<string | null> {
-      const handle = runner(['lookup', ...ATTRS]);
+      const handle = runner({ args: ['lookup', ...ATTRS], operationHint: 'lookup' });
       const result = readResult(handle);
       if (timedOut(result)) throw buildError('lookup', result);
       if (result.status === 0) {
@@ -151,7 +172,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
     },
 
     async clear(): Promise<void> {
-      const handle = runner(['clear', ...ATTRS]);
+      const handle = runner({ args: ['clear', ...ATTRS], operationHint: 'clear' });
       const result = readResult(handle);
       // Clearing a non-existent entry is fine — clear is idempotent.
       if (timedOut(result)) throw buildError('clear', result);
@@ -161,7 +182,13 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
 
     async isAvailable(): Promise<boolean> {
       try {
-        const handle = runner(['lookup', ...ATTRS]);
+        // AC1 (ORAIN-0601): the boot-time availability probe runs the same
+        // `lookup` command, but for diagnostic purposes we want the log
+        // record to say `operation: "isAvailable"` rather than `lookup` —
+        // otherwise a banner-on-first-launch incident is indistinguishable
+        // from a real session-restore failure. The runner contract accepts
+        // a separate `operationHint`; the production adapter honours it.
+        const handle = runner({ args: ['lookup', ...ATTRS], operationHint: 'isAvailable' });
         const result = readResult(handle);
         return keyringReachable(result.status);
       } catch {

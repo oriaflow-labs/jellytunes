@@ -27,16 +27,27 @@ export function createElectronLogger(): Logger {
   // effects from electron-log's file transport until a call is made.
   // Tests pass a different logger; production callers wire this in
   // once `configureLogger()` has run.
-  const log = require('./logger').log as {
-    error: (msg: string, ctx?: unknown) => void;
-    warn: (msg: string, ctx?: unknown) => void;
-    info: (msg: string, ctx?: unknown) => void;
-    debug: (msg: string, ctx?: unknown) => void;
+  //
+  // We adapt electron-log's `log` to the `Logger` interface rather than
+  // re-declaring the four method signatures inline — the wrapper holds
+  // the actual structural shape that `Logger` declares, so any future
+  // method added to `Logger` only needs to be routed here once
+  // (ORAIN-0601 review HIGH finding). The cast is `unknown`-bridged
+  // because electron-log's signatures are `(...params: any[]): void`
+  // while `Logger` expects `(message: string, context?: unknown): void`;
+  // the wrapper below dispatches in the shape we actually call.
+  const electronLog = require('./logger').log as unknown as Record<
+    'error' | 'warn' | 'info' | 'debug',
+    (msg: string, ctx?: unknown) => void
+  >;
+  // Build the adapter by referencing `Logger` itself — if `Logger` gains
+  // a method and we forget to route it, TypeScript will fail to compile
+  // because the literal won't satisfy the interface anymore.
+  const logger: Logger = {
+    error: (m, c) => electronLog.error(m, c),
+    warn: (m, c) => electronLog.warn(m, c),
+    info: (m, c) => electronLog.info(m, c),
+    debug: (m, c) => electronLog.debug(m, c),
   };
-  return {
-    error: (m, c) => log.error(m, c),
-    warn: (m, c) => log.warn(m, c),
-    info: (m, c) => log.info(m, c),
-    debug: (m, c) => log.debug(m, c),
-  };
+  return logger;
 }
