@@ -33,7 +33,7 @@
  * fake filesystem rather than real mounts.
  */
 
-import { join } from 'path';
+import { posix as path } from 'path';
 
 /** The `fs.Stats` fields this scan needs. */
 export interface MountStat {
@@ -83,19 +83,19 @@ export function listRemovableMountpoints(
     }
 
     for (const name of entries) {
-      const path = join(dir, name);
+      const childPath = path.join(dir, name);
       let stat: MountStat;
       try {
-        stat = fs.statSync(path);
+        stat = fs.statSync(childPath);
       } catch {
         continue;
       }
       if (!stat.isDirectory()) continue;
 
       if (stat.dev !== parentDev) {
-        found.push(path);
+        found.push(childPath);
       } else if (depth < MAX_SCAN_DEPTH) {
-        walk(path, stat.dev, depth + 1);
+        walk(childPath, stat.dev, depth + 1);
       }
     }
   };
