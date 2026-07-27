@@ -8,7 +8,8 @@
 // inferring.
 //
 // ORAIN-0591: `hardware-observe` removed — the snap no longer declares that
-// plug, so the probes only iterate the three remaining interfaces.
+// plug. ORAIN-0592: `mount-observe` removed too — the probes now iterate a
+// single remaining interface, `removable-media`.
 
 import { describe, it, expect, vi } from 'vitest';
 import { probeSnapConnection, runSnapConnectionProbes } from './snap-connections';
@@ -28,8 +29,8 @@ describe('probeSnapConnection', () => {
 
   it('passes the plug name to snapctl as `is-connected <plug>`', () => {
     const run = vi.fn(ok);
-    probeSnapConnection(run, 'mount-observe');
-    expect(run).toHaveBeenCalledWith(['is-connected', 'mount-observe']);
+    probeSnapConnection(run, 'removable-media');
+    expect(run).toHaveBeenCalledWith(['is-connected', 'removable-media']);
   });
 
   describe('inconclusive results never produce a command', () => {
@@ -48,30 +49,27 @@ describe('probeSnapConnection', () => {
 
     it('reports unknown when the process was killed (timeout)', () => {
       const run = (): SnapctlResult => ({ status: null });
-      expect(probeSnapConnection(run, 'mount-observe')).toEqual({ status: 'unknown' });
+      expect(probeSnapConnection(run, 'removable-media')).toEqual({ status: 'unknown' });
     });
   });
 });
 
 describe('runSnapConnectionProbes', () => {
-  it('probes the two interfaces that remain (password-manager-service dropped in ORAIN-0590, hardware-observe dropped in ORAIN-0591)', () => {
+  it('probes the single interface that remains (password-manager-service dropped in ORAIN-0590, hardware-observe dropped in ORAIN-0591, mount-observe dropped in ORAIN-0592)', () => {
     const run = vi.fn(ok);
     const probes = runSnapConnectionProbes(run);
 
-    expect(Object.keys(probes).sort()).toEqual(['mount-observe', 'removable-media'].sort());
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(Object.keys(probes)).toEqual(['removable-media']);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it('maps each interface independently', () => {
-    // The whole point of asking snapd per plug: one missing interface must
-    // not colour the verdict of the others.
+  it('maps the interface result through', () => {
     const run = (args: string[]): SnapctlResult =>
-      args[1] === 'mount-observe' ? { status: 1 } : { status: 0 };
+      args[1] === 'removable-media' ? { status: 1 } : { status: 0 };
 
     const probes = runSnapConnectionProbes(run);
 
-    expect(probes['mount-observe']).toEqual({ status: 'missing' });
-    expect(probes['removable-media']).toEqual({ status: 'connected' });
+    expect(probes['removable-media']).toEqual({ status: 'missing' });
   });
 
   it('reports every interface as unknown when snapctl is unavailable', () => {

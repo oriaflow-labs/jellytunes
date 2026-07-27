@@ -1,6 +1,6 @@
 // src/renderer/src/utils/snapPermissions.ts
-// ORAIN-0578, reduced in ORAIN-0590 and ORAIN-0591: shared renderer-side
-// contract for the snap permission report returned by
+// ORAIN-0578, reduced in ORAIN-0590, ORAIN-0591 and ORAIN-0592: shared
+// renderer-side contract for the snap permission report returned by
 // `window.api.checkSnapPermissions()`.
 //
 // The report shape used to be re-declared inline in every consumer
@@ -15,9 +15,11 @@
 // users — the interface isn't even in the snap plugs anymore.
 // `hardware-observe` is also absent: ORAIN-0591 dropped the native
 // `usb-detection` addon under snap in favor of polling, so the plug is no
-// longer declared.
+// longer declared. `mount-observe` is also absent: ORAIN-0592 replaced
+// `/proc/mounts` reads with `st_dev`/`statfs` detection, so the plug is no
+// longer declared either.
 
-export type SnapPermissionInterface = 'mount-observe' | 'removable-media';
+export type SnapPermissionInterface = 'removable-media';
 
 export interface SnapPermissionReportEntry {
   interface: SnapPermissionInterface;
@@ -46,10 +48,6 @@ export const SNAP_PERMISSION_META: Record<
   SnapPermissionInterface,
   { grants: string; impact: string }
 > = {
-  'mount-observe': {
-    grants: 'read /proc/mounts',
-    impact: 'drives mounted under a user folder are detected with the wrong name',
-  },
   'removable-media': {
     grants: 'read /media, /run/media, /mnt',
     impact: 'USB drives and SD cards do not appear in the device list',

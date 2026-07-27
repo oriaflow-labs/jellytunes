@@ -250,13 +250,15 @@ interface Api {
    * `password-manager-service` is intentionally absent: the session
    * provider switched to `secret-tool` (ORAIN-0590), which routes through
    * the Secret portal without the plug. `hardware-observe` is also absent:
-   * USB detection under snap uses polling only (ORAIN-0591).
+   * USB detection under snap uses polling only (ORAIN-0591). `mount-observe`
+   * is also absent: nested mount detection uses `st_dev`/`statfs` instead
+   * of `/proc/mounts` (ORAIN-0592).
    */
   checkSnapPermissions: () => Promise<{
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface: 'mount-observe' | 'removable-media';
+      interface: 'removable-media';
       status: 'missing';
       command: string;
     }>;

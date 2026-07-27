@@ -1,13 +1,12 @@
 /**
- * Snap permission check (ORAIN-0578, reduced in ORAIN-0590 and ORAIN-0591).
+ * Snap permission check (ORAIN-0578, reduced in ORAIN-0590, ORAIN-0591 and
+ * ORAIN-0592).
  *
- * Under Snap strict confinement, three interfaces are not auto-connected
- * by snapd and therefore can be silently missing in sideload/devmode/beta
+ * Under Snap strict confinement, one interface is not auto-connected by
+ * snapd and therefore can be silently missing in sideload/devmode/beta
  * installs and in badly-published releases:
- *   - `mount-observe` (read /proc/mounts — used to enumerate removable
- *     volumes without exec'ing `df`)
- *   - `removable-media` (read /media, /run/media, /mnt — used as a
- *     fallback mount scan)
+ *   - `removable-media` (read /media, /run/media, /mnt — used to enumerate
+ *     mounted volumes and detect their filesystem)
  *
  * `hardware-observe` was removed in ORAIN-0591: USB detection under snap
  * no longer relies on the `usb-detection` native addon (which needs that
@@ -19,6 +18,10 @@
  * Surfacing the old `sudo snap connect jellytunes:password-manager-service`
  * command would only confuse users (the interface isn't even in
  * `package.json:build.snapcraft.core24.plugs` anymore).
+ *
+ * `mount-observe` was a fourth entry until ORAIN-0592 replaced the
+ * /proc/mounts read with st_dev mount-boundary detection and statfs, both of
+ * which stay inside the `removable-media` grant.
  *
  * This module exposes a pure function that takes the result of probing
  * each interface (`connected | missing | unknown`) and produces a
@@ -41,13 +44,10 @@ export interface SnapPermissionProbeResult {
   status: SnapPermissionStatus;
 }
 
-/** The interfaces we currently probe for. Order matters: report order. */
-export type SnapPermissionInterface = 'mount-observe' | 'removable-media';
+/** The interface we currently probe for. Order matters: report order. */
+export type SnapPermissionInterface = 'removable-media';
 
-export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = [
-  'mount-observe',
-  'removable-media',
-];
+export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = ['removable-media'];
 
 /** Stable default — `package.json:2` hardcodes the snap name as "jellytunes". */
 const DEFAULT_SNAP_NAME = 'jellytunes';

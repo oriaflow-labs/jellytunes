@@ -160,8 +160,7 @@
         ],
         "plugs": [
           "default",
-          "removable-media",
-          "mount-observe"
+          "removable-media"
         ]
       }
     }

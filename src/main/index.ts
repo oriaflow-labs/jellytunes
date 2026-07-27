@@ -18,6 +18,8 @@ import {
   type BuildSnapPermissionsReportInput,
 } from './snap-permissions';
 import { runSnapConnectionProbes, type SnapctlResult } from './snap-connections';
+import { listRemovableMountpoints } from './removable-mounts';
+import { detectLinuxFilesystem } from './filesystem-type';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -156,103 +158,27 @@ interface DeviceInfo {
   used: number;
 }
 
-interface LinuxMountEntry {
-  mountpoint: string;
-  fstype: string;
-}
-
-const REMOVABLE_MOUNT_ROOTS = ['/media', '/mnt', '/run/media'];
-
-/** Unescape octal sequences (\040 space, \011 tab, \012 newline, \134 backslash) used in /proc/mounts. */
-function unescapeMountPath(value: string): string {
-  return value.replace(/\\([0-7]{3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
-}
-
-/**
- * Parse /proc/mounts for the real kernel mount table — a plain file read, no
- * subprocess exec, so it isn't blocked by the same strict-confinement rule
- * that blocks exec'ing `df`. Reading /proc/mounts itself is gated behind the
- * `mount-observe` interface (AppArmor rule `@{PROC}/mounts r,`, snapd
- * `interfaces/builtin/mount_observe.go`) — not auto-connected, so this
- * returns null (not []) on EACCES to let the caller fall back rather than
- * silently reporting "no volumes".
- */
-function readLinuxMounts(): LinuxMountEntry[] | null {
-  try {
-    const content = fs.readFileSync('/proc/mounts', 'utf8');
-    return content
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => {
-        const parts = line.split(' ');
-        return { mountpoint: unescapeMountPath(parts[1] ?? ''), fstype: parts[2] ?? '' };
-      })
-      .filter((entry) => entry.mountpoint);
-  } catch (err) {
-    log.warn('Failed to read /proc/mounts (mount-observe interface may not be connected):', err);
-    return null;
-  }
-}
-
 /**
  * Find mounted volumes under conventional removable-media roots.
- * Reads the real mount table instead of listing directories one level deep,
- * so it correctly reaches volumes nested under a per-user directory
- * (the standard GVFS/udisks2 convention: /media/$USER/$LABEL), rather than
- * stopping at the intermediate $USER directory and treating it as the device.
  *
- * Falls back to the legacy one-level directory scan when /proc/mounts can't
- * be read (e.g. `mount-observe` not connected under strict Snap confinement)
- * — degraded (may mislabel nested mounts) but still functional, rather than
- * reporting zero devices.
+ * Detection compares each candidate's `st_dev` against its parent's, which
+ * identifies a real mount boundary — so it reaches volumes nested under a
+ * per-user directory (the GVFS/udisks2 convention `/media/$USER/$LABEL`)
+ * instead of stopping at the intermediate `$USER` directory and treating it
+ * as the device. See `removable-mounts.ts`.
+ *
+ * This replaced a /proc/mounts read, which required the `mount-observe`
+ * interface (ORAIN-0592). The scan now stays inside the `removable-media`
+ * grant the app already needs, so there is no degraded fallback path.
  */
 function listLinuxRemovableMounts(): UsbDevice[] {
-  const mounts = readLinuxMounts();
-  if (mounts === null) {
-    return listLinuxRemovableMountsLegacyScan();
-  }
-  return mounts
-    .filter((entry) =>
-      REMOVABLE_MOUNT_ROOTS.some(
-        (root) => entry.mountpoint !== root && entry.mountpoint.startsWith(root + '/'),
-      ),
-    )
-    .map((entry) => ({
-      device: entry.mountpoint,
-      displayName: basename(entry.mountpoint),
-      size: 0,
-      mountpoints: [{ path: entry.mountpoint }],
-      isRemovable: true,
-    }));
-}
-
-/** Pre-/proc/mounts fallback: lists one directory level under each removable-media root. */
-function listLinuxRemovableMountsLegacyScan(): UsbDevice[] {
-  const devices: UsbDevice[] = [];
-  for (const mp of REMOVABLE_MOUNT_ROOTS) {
-    if (!fs.existsSync(mp)) continue;
-    try {
-      for (const item of fs.readdirSync(mp)) {
-        const itemPath = join(mp, item);
-        try {
-          if (fs.statSync(itemPath).isDirectory()) {
-            devices.push({
-              device: itemPath,
-              displayName: item,
-              size: 0,
-              mountpoints: [{ path: itemPath }],
-              isRemovable: true,
-            });
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  return devices;
+  return listRemovableMountpoints(fs).map((mountpoint) => ({
+    device: mountpoint,
+    displayName: basename(mountpoint),
+    size: 0,
+    mountpoints: [{ path: mountpoint }],
+    isRemovable: true,
+  }));
 }
 
 async function listUsbDevices(): Promise<UsbDevice[]> {
@@ -406,20 +332,12 @@ async function detectFilesystem(devicePath: string): Promise<string> {
         if (t.includes('hfs')) return 'hfs+';
       }
     } else if (platform === 'linux') {
-      // Read the kernel mount table instead of exec'ing `df -T` — a plain
-      // file read, so it isn't blocked by strict Snap confinement.
-      const match = (readLinuxMounts() ?? [])
-        .filter((m) => devicePath === m.mountpoint || devicePath.startsWith(m.mountpoint + '/'))
-        .sort((a, b) => b.mountpoint.length - a.mountpoint.length)[0];
-      if (match) {
-        const t = match.fstype.toLowerCase();
-        if (t === 'vfat' || t === 'fat32' || t === 'msdos') return 'fat32';
-        if (t === 'exfat') return 'exfat';
-        if (t === 'ntfs' || t === 'ntfs3' || t === 'ntfs-3g' || t === 'fuseblk') return 'ntfs';
-        if (t === 'ext4' || t === 'ext3' || t === 'ext2' || t === 'btrfs' || t === 'xfs')
-          return 'ext4';
-        if (t === 'apfs') return 'apfs';
-      }
+      // statfs the path directly instead of exec'ing `df -T` or matching the
+      // longest mountpoint prefix in /proc/mounts — the syscall is in snapd's
+      // default seccomp template, so it needs no interface at all, where
+      // reading /proc/mounts needed `mount-observe` (ORAIN-0592).
+      const label = detectLinuxFilesystem(fs, devicePath);
+      if (label !== 'unknown') return label;
     } else if (platform === 'win32') {
       const driveLetter = devicePath.charAt(0);
       const result = spawnSync(

@@ -25,7 +25,6 @@ JellyTunes uses strict confinement. The interfaces needed for USB/SD sync are no
 
 ```bash
 sudo snap connect jellytunes:removable-media
-sudo snap connect jellytunes:mount-observe
 sudo snap connect jellytunes:hardware-observe
 ```
 

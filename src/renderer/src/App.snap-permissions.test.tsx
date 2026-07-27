@@ -3,8 +3,10 @@
 // ORAIN-0590: `password-manager-service` is no longer surfaced (the
 // session-storage provider switched to `secret-tool`).
 // ORAIN-0591: `hardware-observe` is no longer surfaced either (USB
-// detection under snap uses polling only). This fixture uses the two
-// remaining interfaces only.
+// detection under snap uses polling only).
+// ORAIN-0592: `mount-observe` is no longer surfaced either (nested mount
+// detection uses `st_dev`/`statfs` instead of `/proc/mounts`). This fixture
+// uses the one remaining interface only.
 //
 // The original keyring banner was unreachable in production: the hook set
 // `snapKeyringIssue` and `isConnected: true` in the same state update, while
@@ -20,16 +22,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from './App';
 
-const MOUNT_COMMAND = 'sudo snap connect jellytunes:mount-observe';
 const REMOVABLE_COMMAND = 'sudo snap connect jellytunes:removable-media';
 
 const ALL_MISSING = {
   isSnap: true,
   snapName: 'jellytunes',
-  interfaces: [
-    { interface: 'mount-observe', status: 'missing', command: MOUNT_COMMAND },
-    { interface: 'removable-media', status: 'missing', command: REMOVABLE_COMMAND },
-  ],
+  interfaces: [{ interface: 'removable-media', status: 'missing', command: REMOVABLE_COMMAND }],
 };
 
 const NO_SNAP_REPORT = { isSnap: false, snapName: null, interfaces: [] };
@@ -102,7 +100,7 @@ beforeEach(() => {
 // while effects from the rendered tree are still flushing. Each test builds
 // a fresh api object anyway.
 
-describe('App — snap permissions banner (ORAIN-0578, reduced in ORAIN-0590)', () => {
+describe('App — snap permissions banner (ORAIN-0578, reduced in ORAIN-0590, ORAIN-0591 and ORAIN-0592)', () => {
   describe('while connected (the state the old banner could never reach)', () => {
     it('shows the banner after auto-connecting from a saved session', async () => {
       mockApi({
@@ -122,7 +120,7 @@ describe('App — snap permissions banner (ORAIN-0578, reduced in ORAIN-0590)', 
       expect(screen.getByTestId('snap-permissions-banner')).toBeInTheDocument();
     });
 
-    it('lists both connect commands while connected', async () => {
+    it('lists the connect command while connected', async () => {
       mockApi({
         loadSession: vi.fn().mockResolvedValue(SAVED_SESSION),
         checkSnapPermissions: vi.fn().mockResolvedValue(ALL_MISSING),
@@ -132,7 +130,6 @@ describe('App — snap permissions banner (ORAIN-0578, reduced in ORAIN-0590)', 
 
       await screen.findByTestId('connection-status');
       await screen.findByTestId('snap-permissions-banner');
-      expect(screen.getByText(MOUNT_COMMAND)).toBeInTheDocument();
       expect(screen.getByText(REMOVABLE_COMMAND)).toBeInTheDocument();
     });
 
@@ -149,7 +146,7 @@ describe('App — snap permissions banner (ORAIN-0578, reduced in ORAIN-0590)', 
 
       await screen.findByTestId('connection-status');
       await screen.findByTestId('snap-permissions-banner');
-      expect(screen.getByText(MOUNT_COMMAND)).toBeInTheDocument();
+      expect(screen.getByText(REMOVABLE_COMMAND)).toBeInTheDocument();
       expect(saveSession).toHaveBeenCalled();
     });
   });

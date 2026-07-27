@@ -6,6 +6,9 @@
 // ORAIN-0578 T2: integration coverage of the section wiring — component
 // behavior is covered by SnapPermissionsSection.test.tsx.
 // ORAIN-0590: `password-manager-service` is no longer surfaced.
+// ORAIN-0591: `hardware-observe` is no longer surfaced.
+// ORAIN-0592: `mount-observe` is no longer surfaced — `removable-media` is
+// now the only interface that can appear.
 
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -33,11 +36,6 @@ beforeEach(() => {
       snapName: 'jellytunes',
       interfaces: [
         {
-          interface: 'mount-observe',
-          status: 'missing',
-          command: 'sudo snap connect jellytunes:mount-observe',
-        },
-        {
           interface: 'removable-media',
           status: 'missing',
           command: 'sudo snap connect jellytunes:removable-media',
@@ -55,7 +53,6 @@ describe('AboutModal (snap permissions integration)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('snap-permissions-section')).toBeInTheDocument();
     });
-    expect(screen.getByText('sudo snap connect jellytunes:mount-observe')).toBeInTheDocument();
     expect(screen.getByText('sudo snap connect jellytunes:removable-media')).toBeInTheDocument();
   });
 
