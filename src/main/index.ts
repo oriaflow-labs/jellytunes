@@ -857,6 +857,12 @@ ipcMain.handle('session:clear', () => {
   }
 });
 
+// ORAIN-0590: tell the renderer whether an OS-backed encryption provider
+// is available, so the login screen can show the no-persistence banner
+// before the user has even tried to log in. The probe is cached at boot
+// (see initSecureStorageProvider).
+ipcMain.handle('app:sessionStorageAvailable', () => sessionStorageProvider !== null);
+
 // ---------------------------------------------------------------------------
 // IPC path validation helper
 // Ensures renderer-supplied paths are absolute and contain no null bytes or

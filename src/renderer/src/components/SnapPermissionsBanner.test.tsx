@@ -6,6 +6,9 @@
 // report from `snap:checkPermissions`, so it no longer depends on a failed
 // `session:save` to appear — the previous design could only trigger in a
 // state where its host screen was already unmounted.
+//
+// ORAIN-0590: `password-manager-service` is no longer surfaced (the
+// session-storage provider switched to `secret-tool`).
 
 // @vitest-environment jsdom
 import { render, screen, fireEvent, act } from '@testing-library/react';
@@ -26,17 +29,15 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-const keyringCommand = 'sudo snap connect jellytunes:password-manager-service';
 const mountCommand = 'sudo snap connect jellytunes:mount-observe';
 const removableCommand = 'sudo snap connect jellytunes:removable-media';
 
 // ORAIN-0591: `hardware-observe` removed — snap no longer declares that
-// plug, so the banner surfaces the remaining three interfaces only.
+// plug, so the banner surfaces the two remaining interfaces only.
 const allMissing: SnapPermissionsReport = {
   isSnap: true,
   snapName: 'jellytunes',
   interfaces: [
-    { interface: 'password-manager-service', status: 'missing', command: keyringCommand },
     { interface: 'mount-observe', status: 'missing', command: mountCommand },
     { interface: 'removable-media', status: 'missing', command: removableCommand },
   ],
@@ -60,17 +61,16 @@ describe('SnapPermissionsBanner', () => {
   });
 
   describe('missing interfaces', () => {
-    it('lists all three commands when all three plugs are missing', () => {
+    it('lists both commands when both plugs are missing', () => {
       render(<SnapPermissionsBanner report={allMissing} />);
       expect(screen.getByTestId('snap-permissions-banner')).toBeInTheDocument();
-      expect(screen.getByText(keyringCommand)).toBeInTheDocument();
       expect(screen.getByText(mountCommand)).toBeInTheDocument();
       expect(screen.getByText(removableCommand)).toBeInTheDocument();
     });
 
     it('renders one row per missing interface, keyed by interface name', () => {
       render(<SnapPermissionsBanner report={allMissing} />);
-      for (const name of ['password-manager-service', 'mount-observe', 'removable-media']) {
+      for (const name of ['mount-observe', 'removable-media']) {
         expect(screen.getByTestId(`snap-permissions-banner-row-${name}`)).toBeInTheDocument();
       }
     });
@@ -88,7 +88,7 @@ describe('SnapPermissionsBanner', () => {
         />,
       );
       expect(screen.getByText(removableCommand)).toBeInTheDocument();
-      expect(screen.queryByText(keyringCommand)).not.toBeInTheDocument();
+      expect(screen.queryByText(mountCommand)).not.toBeInTheDocument();
       expect(
         screen.queryByTestId('snap-permissions-banner-row-mount-observe'),
       ).not.toBeInTheDocument();
@@ -96,7 +96,6 @@ describe('SnapPermissionsBanner', () => {
 
     it('explains the user-visible impact of each missing interface', () => {
       render(<SnapPermissionsBanner report={allMissing} />);
-      expect(screen.getByText(/your login isn't saved/i)).toBeInTheDocument();
       expect(screen.getByText(/do not appear in the device list/i)).toBeInTheDocument();
     });
 
@@ -118,7 +117,7 @@ describe('SnapPermissionsBanner', () => {
         fireEvent.click(screen.getByTestId('snap-permissions-banner-copy-all'));
       });
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        [keyringCommand, mountCommand, removableCommand].join('\n'),
+        [mountCommand, removableCommand].join('\n'),
       );
     });
 
@@ -128,7 +127,7 @@ describe('SnapPermissionsBanner', () => {
       await act(async () => {
         fireEvent.click(screen.getByTestId('snap-permissions-banner-copy-all'));
       });
-      expect(screen.getByText(keyringCommand)).toBeInTheDocument();
+      expect(screen.getByText(mountCommand)).toBeInTheDocument();
     });
   });
 

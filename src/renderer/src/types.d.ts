@@ -238,17 +238,25 @@ interface Api {
   }>;
   /** ORAIN-0573: true when running inside a snap. */
   isSnap: () => Promise<boolean>;
+  /** ORAIN-0590: true when an OS-backed encryption provider is available. */
+  isSessionStorageAvailable: () => Promise<boolean>;
   /**
-   * ORAIN-0578: list snap interfaces whose plug isn't connected, each
-   * with the exact `sudo snap connect <snap>:<interface>` command.
-   * Empty `interfaces` array outside snap OR when every probe reports
-   * connected/unknown — call sites should treat it as "nothing to show".
+   * ORAIN-0578, reduced in ORAIN-0590: list snap interfaces whose plug
+   * isn't connected, each with the exact `sudo snap connect
+   * <snap>:<interface>` command. Empty `interfaces` array outside snap OR
+   * when every probe reports connected/unknown — call sites should treat
+   * it as "nothing to show".
+   *
+   * `password-manager-service` is intentionally absent: the session
+   * provider switched to `secret-tool` (ORAIN-0590), which routes through
+   * the Secret portal without the plug. `hardware-observe` is also absent:
+   * USB detection under snap uses polling only (ORAIN-0591).
    */
   checkSnapPermissions: () => Promise<{
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
+      interface: 'mount-observe' | 'removable-media';
       status: 'missing';
       command: string;
     }>;

@@ -54,26 +54,23 @@ describe('probeSnapConnection', () => {
 });
 
 describe('runSnapConnectionProbes', () => {
-  it('probes all three declared interfaces', () => {
+  it('probes the two interfaces that remain (password-manager-service dropped in ORAIN-0590, hardware-observe dropped in ORAIN-0591)', () => {
     const run = vi.fn(ok);
     const probes = runSnapConnectionProbes(run);
 
-    expect(Object.keys(probes).sort()).toEqual(
-      ['mount-observe', 'password-manager-service', 'removable-media'].sort(),
-    );
-    expect(run).toHaveBeenCalledTimes(3);
+    expect(Object.keys(probes).sort()).toEqual(['mount-observe', 'removable-media'].sort());
+    expect(run).toHaveBeenCalledTimes(2);
   });
 
   it('maps each interface independently', () => {
     // The whole point of asking snapd per plug: one missing interface must
     // not colour the verdict of the others.
     const run = (args: string[]): SnapctlResult =>
-      args[1] === 'password-manager-service' ? { status: 1 } : { status: 0 };
+      args[1] === 'mount-observe' ? { status: 1 } : { status: 0 };
 
     const probes = runSnapConnectionProbes(run);
 
-    expect(probes['password-manager-service']).toEqual({ status: 'missing' });
-    expect(probes['mount-observe']).toEqual({ status: 'connected' });
+    expect(probes['mount-observe']).toEqual({ status: 'missing' });
     expect(probes['removable-media']).toEqual({ status: 'connected' });
   });
 

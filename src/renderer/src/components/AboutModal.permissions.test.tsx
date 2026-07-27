@@ -5,6 +5,7 @@
 //
 // ORAIN-0578 T2: integration coverage of the section wiring — component
 // behavior is covered by SnapPermissionsSection.test.tsx.
+// ORAIN-0590: `password-manager-service` is no longer surfaced.
 
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -32,9 +33,9 @@ beforeEach(() => {
       snapName: 'jellytunes',
       interfaces: [
         {
-          interface: 'password-manager-service',
+          interface: 'mount-observe',
           status: 'missing',
-          command: 'sudo snap connect jellytunes:password-manager-service',
+          command: 'sudo snap connect jellytunes:mount-observe',
         },
         {
           interface: 'removable-media',
@@ -54,9 +55,7 @@ describe('AboutModal (snap permissions integration)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('snap-permissions-section')).toBeInTheDocument();
     });
-    expect(
-      screen.getByText('sudo snap connect jellytunes:password-manager-service'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('sudo snap connect jellytunes:mount-observe')).toBeInTheDocument();
     expect(screen.getByText('sudo snap connect jellytunes:removable-media')).toBeInTheDocument();
   });
 

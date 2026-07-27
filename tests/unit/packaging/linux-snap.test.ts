@@ -55,7 +55,7 @@ describe('Linux snap sandbox packaging', () => {
     );
   });
 
-  it('declares the manual-connect interfaces required by USB sync, volume labeling, and keyring', () => {
+  it('declares the manual-connect interfaces required by USB sync and volume labeling', () => {
     // ORAIN-0591: `hardware-observe` is intentionally absent — USB detection
     // under snap runs entirely on polling (`device-watcher.ts`), so the
     // udev access granted by that plug is no longer needed.
@@ -63,7 +63,17 @@ describe('Linux snap sandbox packaging', () => {
 
     expect(plugs).toContain('removable-media');
     expect(plugs).toContain('mount-observe');
-    expect(plugs).toContain('password-manager-service');
     expect(plugs).not.toContain('hardware-observe');
+    expect(plugs).not.toContain('password-manager-service');
+  });
+
+  it('does NOT declare password-manager-service (ORAIN-0590 — secret-tool needs no plug)', () => {
+    // The session-storage provider switched to `secret-tool`, which routes
+    // through the Secret portal inside the confinement. The plug is no
+    // longer requested, no longer surfaced in the UI, and no longer probed.
+    // If a future contributor re-adds it, the banner copy and the snap
+    // permission reports will drift, so the test fails fast.
+    const plugs = projectManifest.build.snapcraft.core24.plugs;
+    expect(plugs).not.toContain('password-manager-service');
   });
 });

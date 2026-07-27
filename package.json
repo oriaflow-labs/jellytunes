@@ -161,8 +161,7 @@
         "plugs": [
           "default",
           "removable-media",
-          "mount-observe",
-          "password-manager-service"
+          "mount-observe"
         ]
       }
     }

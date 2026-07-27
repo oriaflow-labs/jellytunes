@@ -311,15 +311,25 @@ const api = {
   // banner, show "Managed via Snap Store" in About).
   isSnap: (): Promise<boolean> => ipcRenderer.invoke('app:isSnap'),
 
-  // ORAIN-0578 / ORAIN-0591: list missing snap interfaces with their `snap
-  // connect` commands. Empty report outside snap — caller can safely ignore
-  // it. `hardware-observe` is intentionally absent (the plug is no longer
-  // declared; USB detection under snap uses polling only).
+  // ORAIN-0590: true when an OS-backed encryption provider is available
+  // (secret-tool on Linux, safeStorage elsewhere). When false, the
+  // renderer shows a banner on the login screen explaining the session
+  // will not be saved.
+  isSessionStorageAvailable: (): Promise<boolean> =>
+    ipcRenderer.invoke('app:sessionStorageAvailable'),
+
+  // ORAIN-0578 (reduced in ORAIN-0590 and ORAIN-0591): list missing snap
+  // interfaces with their `snap connect` commands. Empty report outside
+  // snap — caller can safely ignore it (the check is purely a "what's
+  // wrong under strict confinement" aid). `password-manager-service` is
+  // intentionally absent: session storage switched to `secret-tool`, which
+  // doesn't need the plug. `hardware-observe` is also absent: USB
+  // detection under snap uses polling only.
   checkSnapPermissions: (): Promise<{
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
+      interface: 'mount-observe' | 'removable-media';
       status: 'missing';
       command: string;
     }>;

@@ -1,11 +1,9 @@
 /**
- * Snap permission check (ORAIN-0578, ORAIN-0591).
+ * Snap permission check (ORAIN-0578, reduced in ORAIN-0590 and ORAIN-0591).
  *
  * Under Snap strict confinement, three interfaces are not auto-connected
  * by snapd and therefore can be silently missing in sideload/devmode/beta
  * installs and in badly-published releases:
- *   - `password-manager-service` (OS keyring / libsecret — used for
- *     encrypted session storage via Electron's safeStorage)
  *   - `mount-observe` (read /proc/mounts — used to enumerate removable
  *     volumes without exec'ing `df`)
  *   - `removable-media` (read /media, /run/media, /mnt — used as a
@@ -14,6 +12,13 @@
  * `hardware-observe` was removed in ORAIN-0591: USB detection under snap
  * no longer relies on the `usb-detection` native addon (which needs that
  * plug), so the permission is not declared and no longer probed here.
+ *
+ * ORAIN-0590: `password-manager-service` is no longer probed or surfaced.
+ * The session-storage provider now uses `secret-tool`, which routes
+ * through the Secret portal inside the confinement without the plug.
+ * Surfacing the old `sudo snap connect jellytunes:password-manager-service`
+ * command would only confuse users (the interface isn't even in
+ * `package.json:build.snapcraft.core24.plugs` anymore).
  *
  * This module exposes a pure function that takes the result of probing
  * each interface (`connected | missing | unknown`) and produces a
@@ -37,13 +42,9 @@ export interface SnapPermissionProbeResult {
 }
 
 /** The interfaces we currently probe for. Order matters: report order. */
-export type SnapPermissionInterface =
-  | 'password-manager-service'
-  | 'mount-observe'
-  | 'removable-media';
+export type SnapPermissionInterface = 'mount-observe' | 'removable-media';
 
 export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = [
-  'password-manager-service',
   'mount-observe',
   'removable-media',
 ];

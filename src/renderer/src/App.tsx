@@ -21,6 +21,7 @@ import { ConnectingScreen } from './components/ConnectingScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { UserSelectorScreen } from './components/UserSelectorScreen';
 import { SnapPermissionsBanner } from './components/SnapPermissionsBanner';
+import { NoSessionStorageBanner } from './components/NoSessionStorageBanner';
 
 import { useDevices } from './hooks/useDevices';
 import { useSnapPermissions } from './hooks/useSnapPermissions';
@@ -722,6 +723,14 @@ function App(): JSX.Element {
   // reachable in every state; the previous keyring banner lived on the
   // login screen but could only ever be raised after that screen unmounted.
   const snapPermissions = useSnapPermissions();
+  // ORAIN-0590: probe once whether an OS-backed encryption provider is
+  // available. The main process caches the result of its startup probe;
+  // we just ask. Default to true so we don't flash the banner while the
+  // probe is still in flight on slow first launches.
+  const [sessionStorageAvailable, setSessionStorageAvailable] = useState(true);
+  useEffect(() => {
+    void window.api.isSessionStorageAvailable().then(setSessionStorageAvailable);
+  }, []);
 
   const screen = ((): JSX.Element => {
     if (!connection.isConnected && !connection.isConnecting && !connection.showUserSelector) {
@@ -760,6 +769,7 @@ function App(): JSX.Element {
 
   return (
     <div className="h-screen flex flex-col bg-surface text-on_surface">
+      <NoSessionStorageBanner available={sessionStorageAvailable} />
       <SnapPermissionsBanner report={snapPermissions} />
       <div className="flex-1 min-h-0">{screen}</div>
     </div>
