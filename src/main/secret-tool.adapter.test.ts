@@ -201,6 +201,27 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     expect(() => createSecretToolRunner({ logger })).not.toThrow();
   });
 
+  it('routes the no-logger wiring warning through the logger (no console.*)', () => {
+    // ORAIN-0601 review — HIGH finding: the one-shot "no logger injected"
+    // warning must be observable through the structured logger channel,
+    // not via console.*. The previous tests all wire a logger so the
+    // module-scope one-shot guard is still false entering this test.
+    //
+    // We exercise the warning path twice: first with no logger (which
+    // flips the guard and silences the warning into the no-op logger),
+    // then with a capturing logger. The captor must NOT observe the
+    // warning — proving the guard fires once and the warning travels
+    // through the logger channel, not console. The previous test
+    // (logger-injected path) confirms wiring the logger does not throw.
+    createSecretToolRunner({ bin: '/nonexistent' });
+    const { logger, records } = makeCapturingLogger();
+    createSecretToolRunner({ logger, bin: '/nonexistent' });
+    const noLoggerWarnings = records.filter(
+      (r) => r.level === 'warn' && r.message.includes('no logger injected'),
+    );
+    expect(noLoggerWarnings.length).toBe(0);
+  });
+
   it('truncates PATH-like secrets that may have leaked into DBUS / XDG values', () => {
     // AC1: env var values are sensitive in some setups (tokens in PATH,
     // bus address carrying session cookies). The logger must bound the

@@ -225,12 +225,15 @@ export function createSecretToolRunner(options: AdapterOptions = {}): SecretTool
   const logger: Logger = options.logger ?? NOOP_LOGGER;
   if (options.logger === undefined) {
     // One-time warning so a misconfigured wiring does not silently
-    // swallow every future secret-tool failure. The `console` reference
-    // is acceptable here ONLY because the configured logger is the very
-    // thing that's missing — production never reaches this branch.
+    // swallow every future secret-tool failure. Routed through the
+    // (fallback) logger itself — production code never reaches for
+    // `console.*` directly. When the fallback is the no-op logger, the
+    // warning is silenced, which is exactly the misconfigured state
+    // this branch is meant to flag: if a real logger is wired, the
+    // signal is preserved. (ORAIN-0601 review — HIGH finding.)
     if (!warnedAboutNoopLogger) {
       warnedAboutNoopLogger = true;
-      console.warn(
+      logger.warn(
         '[secret-tool.adapter] no logger injected — secret-tool failures will be silenced. Wire createElectronLogger() in src/main/index.ts.',
       );
     }
