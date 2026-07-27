@@ -9,7 +9,9 @@ import * as os from 'os';
 import { createSyncCore, createApiClient, type CoverArtMode, type TrackInfo } from '../sync';
 import { detectSnapEnv, type SnapEnv } from './snap-env';
 import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
-import { isSecureStorageAvailable } from './secure-storage';
+import { createSecureStorageProvider, type StorageProvider } from './secure-storage';
+import { createSecretStore } from './secret-store';
+import { createSecretToolRunner } from './secret-tool.adapter';
 import {
   buildSnapPermissionsReport,
   type SnapPermissionsReport,
@@ -765,19 +767,51 @@ function createWindow(): void {
 
 // ---------------------------------------------------------------------------
 // Encrypted session storage (replaces plaintext localStorage)
+//
+// ORAIN-0590: the active provider is decided once at startup by the
+// selector in `./secure-storage.ts`. On Linux the preferred provider is
+// `secret-tool` (libsecret routed through the Secret portal inside the
+// snap sandbox); `safeStorage` is the fallback. On macOS/Windows we use
+// `safeStorage` directly. When neither works we return
+// `encryption_unavailable` — the renderer surfaces a no-persistence
+// banner instead of pretending the save succeeded.
 // ---------------------------------------------------------------------------
 const SESSION_FILE = () => join(app.getPath('userData'), 'session.enc');
 
-ipcMain.handle('session:save', (_event, plaintext: string) => {
+/** Active provider — set by `initSecureStorageProvider()` at app boot. */
+let sessionStorageProvider: StorageProvider | null = null;
+
+/**
+ * Probe secret-tool once and pick the right provider. Safe to call from
+ * `app.whenReady()` — it never blocks longer than the runner's own
+ * timeout (2s by default), and the result is reused for every IPC call.
+ *
+ * Exported for the test suite — production code never imports it.
+ */
+export async function initSecureStorageProvider(): Promise<StorageProvider | null> {
+  const secretRunner = createSecretToolRunner();
+  const rawStore = createSecretStore({ runner: secretRunner });
+  const availabilityCached = await rawStore.isAvailable();
+  const secretStore = Object.assign(rawStore, { availabilityCached });
+  sessionStorageProvider = createSecureStorageProvider({
+    secretStore,
+    safeStorage,
+  });
+  if (sessionStorageProvider) {
+    log.info(`Session storage: using ${sessionStorageProvider.kind} provider`);
+  } else {
+    log.warn('Session storage: no provider available — sessions will not persist');
+  }
+  return sessionStorageProvider;
+}
+
+ipcMain.handle('session:save', async (_event, plaintext: string) => {
   try {
-    if (!isSecureStorageAvailable(safeStorage)) {
-      // No OS-backed keyring available (or Linux fell back to the insecure
-      // basic_text backend, e.g. under Snap strict confinement without
-      // password-manager-service connected) — reject save rather than
-      // silently persisting weakly-"encrypted" credentials (ORAIN-0571).
+    const provider = sessionStorageProvider;
+    if (!provider) {
       return { success: false, reason: 'encryption_unavailable' };
     }
-    const encrypted = safeStorage.encryptString(plaintext);
+    const encrypted = await provider.encrypt(plaintext);
     fs.writeFileSync(SESSION_FILE(), encrypted);
     return { success: true };
   } catch (e) {
@@ -786,17 +820,28 @@ ipcMain.handle('session:save', (_event, plaintext: string) => {
   }
 });
 
-ipcMain.handle('session:load', () => {
+ipcMain.handle('session:load', async () => {
   try {
-    if (!isSecureStorageAvailable(safeStorage)) {
-      // Same fail-safe as session:save — refuse to read/decrypt via a
-      // non-OS-backed backend rather than silently degrading (ORAIN-0571).
+    const provider = sessionStorageProvider;
+    if (!provider) {
       return null;
     }
     const filePath = SESSION_FILE();
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath);
-    return safeStorage.decryptString(raw);
+    const decrypted = await provider.decrypt(raw);
+    // Stale-blob safety: the active provider couldn't read this file
+    // (e.g. it was encrypted by the previous safeStorage backend under
+    // snap and secret-tool can't read it). Drop to login — never throw.
+    if (decrypted === null && raw.length > 0) {
+      log.warn('Session file present but unreadable by active provider; clearing');
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        /* best effort */
+      }
+    }
+    return decrypted;
   } catch (err) {
     log.error('Failed to load session:', err);
     return null;
@@ -1627,6 +1672,10 @@ void app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window);
   });
+  // Probe secret-tool once at boot and pick the active session-storage
+  // provider. Non-blocking — the IPC handlers fall back gracefully if the
+  // probe is still in flight when the user logs in.
+  void initSecureStorageProvider();
   createWindow();
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
