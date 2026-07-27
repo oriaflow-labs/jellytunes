@@ -1,7 +1,7 @@
 {
   "name": "jellytunes",
   "version": "0.5.0",
-  "description": "Jellyfin music sync → MP3/FLAC devices",
+  "description": "Take your Jellyfin music offline on MP3 players and storage devices",
   "homepage": "https://github.com/orainlabs/jellytunes",
   "main": "dist/main/index.js",
   "desktopName": "jellytunes.desktop",
@@ -139,13 +139,17 @@
         "snap"
       ],
       "icon": "assets/icons",
-      "synopsis": "Jellyfin music sync → MP3/FLAC devices",
+      "synopsis": "Take your Jellyfin music offline on MP3 players and storage devices",
+      "description": "JellyTunes is a desktop app for Jellyfin users who want their music offline. Browse the artists, album artists, albums, playlists and genres on your server, pick a destination such as an MP3 player, a USB drive, an SD card or any local folder, and hit sync. JellyTunes downloads the tracks, converts formats when needed, embeds lyrics and cover art, and mirrors your server's folder structure at the destination. It only copies what is new or changed, shows you exactly what will be added, updated or removed before it starts, and remembers what went to each device.",
       "category": "AudioVideo",
       "syncDesktopName": true
     },
     "snapcraft": {
       "base": "core24",
       "core24": {
+        "title": "JellyTunes",
+        "summary": "Take your Jellyfin music offline on MP3 players and storage devices",
+        "description": "JellyTunes is a desktop app for Jellyfin users who want their music offline. Browse the artists, album artists, albums, playlists and genres on your server, pick a destination such as an MP3 player, a USB drive, an SD card or any local folder, and hit sync. JellyTunes downloads the tracks, converts formats when needed, embeds lyrics and cover art, and mirrors your server's folder structure at the destination.\n\nFeatures:\n\n- Browse your full Jellyfin library: artists, album artists, albums, playlists and genres\n- Sync to MP3 players, USB drives, SD cards and local folders\n- Selective sync that copies only what is new or changed, and flags tracks that changed on the server\n- Sync preview with the exact list of additions, updates and removals, including track count, size and duration\n- FLAC to MP3 conversion with configurable bitrate (128k, 192k or 320k), saved per device\n- Lyrics as .lrc sidecar files or embedded into the tracks\n- Cover art embedded into each track or written as companion cover.jpg files\n- ReplayGain tags carried over from Jellyfin for consistent playback volume\n- Storage bar with live size estimates that warns when a selection exceeds free space\n- FAT32, exFAT and NTFS detection, with filenames sanitized for each\n- Per-destination history so you can pick up where you left off\n- Cancel a sync at any point without corrupting what is already written\n\nJellyTunes needs a Jellyfin server reachable on your network. It is free software released under the GPL v3.",
         "confinement": "strict",
         "useLXD": true,
         "stagePackages": [

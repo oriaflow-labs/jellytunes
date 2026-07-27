@@ -5,7 +5,7 @@
 <h1 align="center">JellyTunes</h1>
 
 <p align="center">
-  Sync your Jellyfin music library to any USB drive, SD card or local folder — with optional FLAC to MP3 conversion.
+  Take your Jellyfin music offline on MP3 players and storage devices.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 
 ---
 
-JellyTunes is a desktop app for [Jellyfin](https://jellyfin.org) users who want to take their music offline. Browse your server's artists, album artists, albums, playlists, and genres, pick a destination — a USB drive, SD card, or any local folder — and hit sync. JellyTunes downloads everything, converts formats if needed, embeds lyrics and cover art, and mirrors your server's folder structure at the destination.
+JellyTunes is a desktop app for [Jellyfin](https://jellyfin.org) users who want their music offline. Browse the artists, album artists, albums, playlists and genres on your server, pick a destination such as an MP3 player, a USB drive, an SD card or any local folder, and hit sync. JellyTunes downloads the tracks, converts formats when needed, embeds lyrics and cover art, and mirrors your server's folder structure at the destination.
 
 ## Key Features
 
