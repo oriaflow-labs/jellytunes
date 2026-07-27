@@ -311,18 +311,15 @@ const api = {
   // banner, show "Managed via Snap Store" in About).
   isSnap: (): Promise<boolean> => ipcRenderer.invoke('app:isSnap'),
 
-  // ORAIN-0578: list missing snap interfaces with their `snap connect`
-  // commands. Empty report outside snap — caller can safely ignore it
-  // (the check is purely a "what's wrong under strict confinement" aid).
+  // ORAIN-0578 / ORAIN-0591: list missing snap interfaces with their `snap
+  // connect` commands. Empty report outside snap — caller can safely ignore
+  // it. `hardware-observe` is intentionally absent (the plug is no longer
+  // declared; USB detection under snap uses polling only).
   checkSnapPermissions: (): Promise<{
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface:
-        | 'password-manager-service'
-        | 'mount-observe'
-        | 'removable-media'
-        | 'hardware-observe';
+      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
       status: 'missing';
       command: string;
     }>;

@@ -26,10 +26,10 @@ const IS_SNAP: boolean = snapEnv.isSnap;
 
 // ─── Snap permission probes (ORAIN-0578) ─────────────────────────────────
 // Ask snapd directly rather than inferring each plug's state from what the
-// filesystem lets us touch. The filesystem probes this replaces were wrong
-// in practice: `hardware-observe` reported missing with the plug connected,
-// because the interface grants reading the udev data files without granting
-// a listing of /run/udev/data itself.
+// filesystem lets us touch. The earlier filesystem probes were unreliable:
+// a plug whose files were unreadable was reported "missing" even when
+// actually connected, and vice versa for plugs whose files were
+// world-readable.
 const SNAPCTL_TIMEOUT_MS = 2000;
 function runSnapctl(args: string[]): SnapctlResult {
   const result = spawnSync('snapctl', args, {
@@ -44,7 +44,7 @@ function runSnapctl(args: string[]): SnapctlResult {
 // launch, so the answer is immutable for this process — probe once.
 let snapProbesCache: BuildSnapPermissionsReportInput['probes'] | null = null;
 
-/** Run all four probes (under snap only — caller gates on `IS_SNAP`). */
+/** Run every probe (under snap only — caller gates on `IS_SNAP`). */
 function runSnapPermissionProbes(): BuildSnapPermissionsReportInput['probes'] {
   snapProbesCache ??= runSnapConnectionProbes(runSnapctl);
   return snapProbesCache;
@@ -745,7 +745,10 @@ function createWindow(): void {
     log.info('Window ready');
   });
   mainWindow.webContents.on('did-finish-load', async () => {
-    if (mainWindow) await startDeviceWatcher(mainWindow, listUsbDevices);
+    // ORAIN-0591: pass IS_SNAP so the watcher can skip the `usb-detection`
+    // native addon (which needs the `hardware-observe` plug) under snap and
+    // fall back to polling only.
+    if (mainWindow) await startDeviceWatcher(mainWindow, listUsbDevices, IS_SNAP);
   });
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url);

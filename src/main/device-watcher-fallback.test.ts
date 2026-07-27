@@ -50,7 +50,9 @@ describe('Device Watcher (fallback polling — usb-detection unavailable)', () =
     const mockListUsb = vi.fn().mockResolvedValue([]);
 
     // Must not throw — should fall back to polling silently
-    await expect(startDeviceWatcher(mockWindow as any, mockListUsb)).resolves.toBeUndefined();
+    await expect(
+      startDeviceWatcher(mockWindow as any, mockListUsb, false),
+    ).resolves.toBeUndefined();
 
     stopDeviceWatcher();
     vi.doUnmock('usb-detection');
@@ -84,7 +86,7 @@ describe('Device Watcher (fallback polling — usb-detection unavailable)', () =
     const mockWindow = { webContents: { send: sendMock } };
     const mockListUsb = vi.fn().mockResolvedValue([]);
 
-    await startDeviceWatcher(mockWindow as any, mockListUsb);
+    await startDeviceWatcher(mockWindow as any, mockListUsb, false);
 
     // In fallback mode, no startMonitoring is called (usb-detection didn't load)
     // The watcher still functions via polling — wait for one poll cycle

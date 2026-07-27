@@ -67,28 +67,27 @@ describe('SnapPermissionsSection', () => {
     expect(screen.getAllByText(/mount-observe/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('covers all four interfaces, including hardware-observe', () => {
-    // ORAIN-0578: hardware-observe is declared in the snapcraft plugs but was
-    // not probed or surfaced, so a missing udev permission was invisible.
-    const allFour = {
+  it('covers the three declared interfaces', () => {
+    // ORAIN-0591: `hardware-observe` removed from the snapcraft plugs;
+    // USB detection under snap now uses polling only, so the missing udev
+    // permission is no longer a case to surface here.
+    const allDeclared = {
       isSnap: true,
       snapName: 'jellytunes',
-      interfaces: (
-        [
-          'password-manager-service',
-          'mount-observe',
-          'removable-media',
-          'hardware-observe',
-        ] as const
-      ).map((name) => ({
-        interface: name,
-        status: 'missing' as const,
-        command: `sudo snap connect jellytunes:${name}`,
-      })),
+      interfaces: (['password-manager-service', 'mount-observe', 'removable-media'] as const).map(
+        (name) => ({
+          interface: name,
+          status: 'missing' as const,
+          command: `sudo snap connect jellytunes:${name}`,
+        }),
+      ),
     };
-    render(<SnapPermissionsSection report={allFour} />);
-    expect(screen.getByText('sudo snap connect jellytunes:hardware-observe')).toBeInTheDocument();
-    expect(screen.getByText(/udev access for USB attach\/detach events/i)).toBeInTheDocument();
+    render(<SnapPermissionsSection report={allDeclared} />);
+    expect(
+      screen.getByText('sudo snap connect jellytunes:password-manager-service'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('sudo snap connect jellytunes:mount-observe')).toBeInTheDocument();
+    expect(screen.getByText('sudo snap connect jellytunes:removable-media')).toBeInTheDocument();
   });
 
   it('shows the restart notice', () => {

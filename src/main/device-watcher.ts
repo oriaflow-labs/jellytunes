@@ -27,6 +27,12 @@ let initialMountpointPaths = new Set<string>();
 
 // Polling backup state (runs alongside usb-detection to detect mount/unmount without disconnect)
 const POLL_INTERVAL_MS = 15000;
+// ORAIN-0591: longer polling interval under snap — the `usb-detection` native
+// addon is skipped there (it would just fail without `hardware-observe`), so
+// this loop becomes the primary and only detection method. 4s trades a few
+// hundred ms of attach latency for noticeably less CPU/battery on a
+// confined runtime that is otherwise starved of resources.
+const SNAP_POLL_INTERVAL_MS = 4000;
 let pollPreviousPaths = new Set<string>();
 let lastUsbDetectionEventMs = 0;
 const USB_DETECTION_COOLDOWN_MS = 5000; // polling waits 5s after usb-detection event before emitting
@@ -70,11 +76,26 @@ async function tryLoadUsbDetection(): Promise<boolean> {
 export async function startDeviceWatcher(
   win: BrowserWindowLike,
   listUsbDevices: () => Promise<UsbDevice[]>,
+  isSnap: boolean,
 ): Promise<void> {
   // Guard against double-start
   if (monitoringActive) stopDeviceWatcher();
 
   monitoringActive = true;
+
+  // ORAIN-0591: under snap, the `usb-detection` native addon is skipped
+  // entirely. It would only work through the `hardware-observe` plug (which
+  // we no longer declare), and the addon itself has a history of ABI
+  // mismatches with Electron (`device-watcher.ts:tryLoadUsbDetection`). The
+  // fallback polling watcher already covers attach/detach and mount/unmount
+  // via complete-path comparison, so we promote it to the only mode.
+  if (isSnap) {
+    log.info(
+      'USB device watcher: snap runtime — using polling only (hardware-observe not requested)',
+    );
+    startFallbackPollingWatcher(win, listUsbDevices, SNAP_POLL_INTERVAL_MS);
+    return;
+  }
 
   const loaded = await tryLoadUsbDetection();
 
@@ -84,7 +105,7 @@ export async function startDeviceWatcher(
     startPollingBackupWatcher(win, listUsbDevices);
   } else {
     // Fallback: polling as primary method
-    startFallbackPollingWatcher(win, listUsbDevices);
+    startFallbackPollingWatcher(win, listUsbDevices, 2000);
   }
 }
 
@@ -233,8 +254,9 @@ function startPollingBackupWatcher(
 function startFallbackPollingWatcher(
   win: BrowserWindowLike,
   listUsbDevices: () => Promise<UsbDevice[]>,
+  intervalMs: number,
 ): void {
-  log.warn('USB device watcher: starting in polling fallback mode (2s interval)');
+  log.warn(`USB device watcher: starting in polling fallback mode (${intervalMs}ms interval)`);
   monitoringActive = true;
 
   let previousPaths = new Set<string>();
@@ -255,7 +277,7 @@ function startFallbackPollingWatcher(
       } catch {
         // silent
       }
-    }, 2000);
+    }, intervalMs);
   });
 }
 

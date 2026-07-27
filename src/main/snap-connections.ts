@@ -1,12 +1,11 @@
 /**
- * Snap interface state via `snapctl` (ORAIN-0578).
+ * Snap interface state via `snapctl` (ORAIN-0578, ORAIN-0591).
  *
  * snapd answers "is this plug connected?" directly, so we ask it instead of
  * inferring the answer from what the filesystem lets us touch. The earlier
- * filesystem probes were unreliable in both directions — most visibly,
- * `hardware-observe` was reported missing even with the plug connected,
- * because the interface grants reading the udev data files without granting
- * a listing of `/run/udev/data` itself.
+ * filesystem probes were unreliable in both directions — e.g. a plug whose
+ * files were unreadable was reported "missing" even with the plug actually
+ * connected, and vice versa for plugs whose files were world-readable.
  *
  * `snapctl is-connected <plug>` exits 0 when connected and 1 when not.
  * Anything else (snapctl absent, unknown plug, timeout) is inconclusive and

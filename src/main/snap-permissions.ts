@@ -1,7 +1,7 @@
 /**
- * Snap permission check (ORAIN-0578).
+ * Snap permission check (ORAIN-0578, ORAIN-0591).
  *
- * Under Snap strict confinement, four interfaces are not auto-connected
+ * Under Snap strict confinement, three interfaces are not auto-connected
  * by snapd and therefore can be silently missing in sideload/devmode/beta
  * installs and in badly-published releases:
  *   - `password-manager-service` (OS keyring / libsecret — used for
@@ -10,9 +10,10 @@
  *     volumes without exec'ing `df`)
  *   - `removable-media` (read /media, /run/media, /mnt — used as a
  *     fallback mount scan)
- *   - `hardware-observe` (udev access — needed by the `usb-detection`
- *     native addon in `device-watcher.ts`; without it the watcher falls
- *     back to polling every 2s instead of reacting to attach/detach)
+ *
+ * `hardware-observe` was removed in ORAIN-0591: USB detection under snap
+ * no longer relies on the `usb-detection` native addon (which needs that
+ * plug), so the permission is not declared and no longer probed here.
  *
  * This module exposes a pure function that takes the result of probing
  * each interface (`connected | missing | unknown`) and produces a
@@ -35,18 +36,16 @@ export interface SnapPermissionProbeResult {
   status: SnapPermissionStatus;
 }
 
-/** The four interfaces we currently probe for. Order matters: report order. */
+/** The interfaces we currently probe for. Order matters: report order. */
 export type SnapPermissionInterface =
   | 'password-manager-service'
   | 'mount-observe'
-  | 'removable-media'
-  | 'hardware-observe';
+  | 'removable-media';
 
 export const SNAP_PERMISSION_INTERFACES: readonly SnapPermissionInterface[] = [
   'password-manager-service',
   'mount-observe',
   'removable-media',
-  'hardware-observe',
 ];
 
 /** Stable default — `package.json:2` hardcodes the snap name as "jellytunes". */

@@ -3,10 +3,12 @@
 //
 // The previous implementation guessed each interface's state by poking the
 // filesystem (readdir on /run/udev/data, /media, /proc/mounts). That was
-// wrong: `hardware-observe` was reported missing even with the plug
-// connected, because the interface grants reading the udev files without
-// granting a listing of the directory itself. snapd answers the question
-// directly, so we ask it instead of inferring.
+// wrong: filesystem-derived answers diverged from what snapd actually
+// granted. snapd answers the question directly, so we ask it instead of
+// inferring.
+//
+// ORAIN-0591: `hardware-observe` removed — the snap no longer declares that
+// plug, so the probes only iterate the three remaining interfaces.
 
 import { describe, it, expect, vi } from 'vitest';
 import { probeSnapConnection, runSnapConnectionProbes } from './snap-connections';
@@ -17,7 +19,7 @@ const notConnected = (): SnapctlResult => ({ status: 1 });
 
 describe('probeSnapConnection', () => {
   it('reports connected on exit code 0', () => {
-    expect(probeSnapConnection(ok, 'hardware-observe')).toEqual({ status: 'connected' });
+    expect(probeSnapConnection(ok, 'removable-media')).toEqual({ status: 'connected' });
   });
 
   it('reports missing on exit code 1', () => {
@@ -34,14 +36,14 @@ describe('probeSnapConnection', () => {
     it('reports unknown when snapctl cannot be executed', () => {
       // e.g. not running under snap, or snapctl missing from PATH
       const run = (): SnapctlResult => ({ status: null, error: new Error('ENOENT') });
-      expect(probeSnapConnection(run, 'hardware-observe')).toEqual({ status: 'unknown' });
+      expect(probeSnapConnection(run, 'removable-media')).toEqual({ status: 'unknown' });
     });
 
     it('reports unknown on a usage/other error exit code', () => {
       // Exit codes other than 0/1 mean snapctl failed to answer (unknown
       // plug, bad invocation) — not evidence that the plug is missing.
       const run = (): SnapctlResult => ({ status: 2 });
-      expect(probeSnapConnection(run, 'hardware-observe')).toEqual({ status: 'unknown' });
+      expect(probeSnapConnection(run, 'removable-media')).toEqual({ status: 'unknown' });
     });
 
     it('reports unknown when the process was killed (timeout)', () => {
@@ -52,14 +54,14 @@ describe('probeSnapConnection', () => {
 });
 
 describe('runSnapConnectionProbes', () => {
-  it('probes all four interfaces', () => {
+  it('probes all three declared interfaces', () => {
     const run = vi.fn(ok);
     const probes = runSnapConnectionProbes(run);
 
     expect(Object.keys(probes).sort()).toEqual(
-      ['hardware-observe', 'mount-observe', 'password-manager-service', 'removable-media'].sort(),
+      ['mount-observe', 'password-manager-service', 'removable-media'].sort(),
     );
-    expect(run).toHaveBeenCalledTimes(4);
+    expect(run).toHaveBeenCalledTimes(3);
   });
 
   it('maps each interface independently', () => {
@@ -73,7 +75,6 @@ describe('runSnapConnectionProbes', () => {
     expect(probes['password-manager-service']).toEqual({ status: 'missing' });
     expect(probes['mount-observe']).toEqual({ status: 'connected' });
     expect(probes['removable-media']).toEqual({ status: 'connected' });
-    expect(probes['hardware-observe']).toEqual({ status: 'connected' });
   });
 
   it('reports every interface as unknown when snapctl is unavailable', () => {

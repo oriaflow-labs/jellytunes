@@ -10,8 +10,7 @@
 export type SnapPermissionInterface =
   | 'password-manager-service'
   | 'mount-observe'
-  | 'removable-media'
-  | 'hardware-observe';
+  | 'removable-media';
 
 export interface SnapPermissionReportEntry {
   interface: SnapPermissionInterface;
@@ -51,9 +50,5 @@ export const SNAP_PERMISSION_META: Record<
   'removable-media': {
     grants: 'read /media, /run/media, /mnt',
     impact: 'USB drives and SD cards do not appear in the device list',
-  },
-  'hardware-observe': {
-    grants: 'udev access for USB attach/detach events',
-    impact: 'newly plugged drives take a few seconds longer to appear',
   },
 };

@@ -61,7 +61,7 @@ describe('Device Watcher (event-based)', () => {
       ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       expect(mockListUsbDevices).toHaveBeenCalled();
       expect(mockSend).not.toHaveBeenCalled();
@@ -87,7 +87,7 @@ describe('Device Watcher (event-based)', () => {
         ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -101,7 +101,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const removeHandler = getRemoveHandler();
       removeHandler!();
@@ -125,7 +125,7 @@ describe('Device Watcher (event-based)', () => {
         ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -160,7 +160,7 @@ describe('Device Watcher (event-based)', () => {
         ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -186,7 +186,7 @@ describe('Device Watcher (event-based)', () => {
         ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -202,7 +202,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]); // always empty
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -240,7 +240,7 @@ describe('Device Watcher (event-based)', () => {
         ]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       const removeHandler = getRemoveHandler();
@@ -268,8 +268,8 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       expect(mockUsbDetection.stopMonitoring).toHaveBeenCalledTimes(1);
       expect(mockUsbDetection.startMonitoring).toHaveBeenCalledTimes(2);
@@ -281,7 +281,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       // Polling backup should be registered (the interval runs with 15s)
       // We can't easily verify the interval exists, but we verify no spurious events
@@ -297,7 +297,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       const addHandler = getAddHandler();
       addHandler!();
@@ -310,7 +310,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       stopDeviceWatcher();
       expect(() => stopDeviceWatcher()).not.toThrow();
@@ -320,7 +320,7 @@ describe('Device Watcher (event-based)', () => {
       const mockListUsbDevices = vi.fn().mockResolvedValue([]);
 
       const { startDeviceWatcher, stopDeviceWatcher } = await import('./device-watcher');
-      await startDeviceWatcher(mockWindow as any, mockListUsbDevices);
+      await startDeviceWatcher(mockWindow as any, mockListUsbDevices, false);
 
       stopDeviceWatcher();
       const addHandler = getAddHandler();

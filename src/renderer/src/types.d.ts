@@ -248,11 +248,7 @@ interface Api {
     isSnap: boolean;
     snapName: string | null;
     interfaces: Array<{
-      interface:
-        | 'password-manager-service'
-        | 'mount-observe'
-        | 'removable-media'
-        | 'hardware-observe';
+      interface: 'password-manager-service' | 'mount-observe' | 'removable-media';
       status: 'missing';
       command: string;
     }>;

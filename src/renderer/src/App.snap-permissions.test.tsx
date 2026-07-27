@@ -9,6 +9,10 @@
 //
 // These tests mount the real `App` and assert the banner is reachable in
 // BOTH routing states, so a future refactor cannot orphan it again.
+//
+// ORAIN-0591: `hardware-observe` removed from the snapcraft plugs and
+// surfaced interfaces. The "all missing" report now contains three
+// interfaces instead of four.
 
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react';
@@ -18,16 +22,14 @@ import App from './App';
 const KEYRING_COMMAND = 'sudo snap connect jellytunes:password-manager-service';
 const MOUNT_COMMAND = 'sudo snap connect jellytunes:mount-observe';
 const REMOVABLE_COMMAND = 'sudo snap connect jellytunes:removable-media';
-const HARDWARE_COMMAND = 'sudo snap connect jellytunes:hardware-observe';
 
-const ALL_FOUR_MISSING = {
+const ALL_MISSING = {
   isSnap: true,
   snapName: 'jellytunes',
   interfaces: [
     { interface: 'password-manager-service', status: 'missing', command: KEYRING_COMMAND },
     { interface: 'mount-observe', status: 'missing', command: MOUNT_COMMAND },
     { interface: 'removable-media', status: 'missing', command: REMOVABLE_COMMAND },
-    { interface: 'hardware-observe', status: 'missing', command: HARDWARE_COMMAND },
   ],
 };
 
@@ -104,7 +106,7 @@ describe('App — snap permissions banner (ORAIN-0578)', () => {
     it('shows the banner after auto-connecting from a saved session', async () => {
       mockApi({
         loadSession: vi.fn().mockResolvedValue(SAVED_SESSION),
-        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_FOUR_MISSING),
+        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_MISSING),
       });
 
       render(<App />);
@@ -119,10 +121,10 @@ describe('App — snap permissions banner (ORAIN-0578)', () => {
       expect(screen.getByTestId('snap-permissions-banner')).toBeInTheDocument();
     });
 
-    it('lists all four connect commands while connected', async () => {
+    it('lists all three connect commands while connected', async () => {
       mockApi({
         loadSession: vi.fn().mockResolvedValue(SAVED_SESSION),
-        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_FOUR_MISSING),
+        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_MISSING),
       });
 
       render(<App />);
@@ -132,7 +134,6 @@ describe('App — snap permissions banner (ORAIN-0578)', () => {
       expect(screen.getByText(KEYRING_COMMAND)).toBeInTheDocument();
       expect(screen.getByText(MOUNT_COMMAND)).toBeInTheDocument();
       expect(screen.getByText(REMOVABLE_COMMAND)).toBeInTheDocument();
-      expect(screen.getByText(HARDWARE_COMMAND)).toBeInTheDocument();
     });
 
     it('does not depend on session:save failing to surface the keyring issue', async () => {
@@ -143,7 +144,7 @@ describe('App — snap permissions banner (ORAIN-0578)', () => {
       mockApi({
         loadSession: vi.fn().mockResolvedValue(SAVED_SESSION),
         saveSession,
-        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_FOUR_MISSING),
+        checkSnapPermissions: vi.fn().mockResolvedValue(ALL_MISSING),
       });
 
       render(<App />);
@@ -157,7 +158,7 @@ describe('App — snap permissions banner (ORAIN-0578)', () => {
 
   describe('while logged out', () => {
     it('shows the banner on the login screen', async () => {
-      mockApi({ checkSnapPermissions: vi.fn().mockResolvedValue(ALL_FOUR_MISSING) });
+      mockApi({ checkSnapPermissions: vi.fn().mockResolvedValue(ALL_MISSING) });
 
       render(<App />);
 

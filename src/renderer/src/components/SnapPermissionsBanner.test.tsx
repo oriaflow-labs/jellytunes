@@ -29,16 +29,16 @@ afterEach(() => {
 const keyringCommand = 'sudo snap connect jellytunes:password-manager-service';
 const mountCommand = 'sudo snap connect jellytunes:mount-observe';
 const removableCommand = 'sudo snap connect jellytunes:removable-media';
-const hardwareCommand = 'sudo snap connect jellytunes:hardware-observe';
 
-const allFourMissing: SnapPermissionsReport = {
+// ORAIN-0591: `hardware-observe` removed — snap no longer declares that
+// plug, so the banner surfaces the remaining three interfaces only.
+const allMissing: SnapPermissionsReport = {
   isSnap: true,
   snapName: 'jellytunes',
   interfaces: [
     { interface: 'password-manager-service', status: 'missing', command: keyringCommand },
     { interface: 'mount-observe', status: 'missing', command: mountCommand },
     { interface: 'removable-media', status: 'missing', command: removableCommand },
-    { interface: 'hardware-observe', status: 'missing', command: hardwareCommand },
   ],
 };
 
@@ -60,23 +60,17 @@ describe('SnapPermissionsBanner', () => {
   });
 
   describe('missing interfaces', () => {
-    it('lists all four commands when all four plugs are missing', () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+    it('lists all three commands when all three plugs are missing', () => {
+      render(<SnapPermissionsBanner report={allMissing} />);
       expect(screen.getByTestId('snap-permissions-banner')).toBeInTheDocument();
       expect(screen.getByText(keyringCommand)).toBeInTheDocument();
       expect(screen.getByText(mountCommand)).toBeInTheDocument();
       expect(screen.getByText(removableCommand)).toBeInTheDocument();
-      expect(screen.getByText(hardwareCommand)).toBeInTheDocument();
     });
 
     it('renders one row per missing interface, keyed by interface name', () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
-      for (const name of [
-        'password-manager-service',
-        'mount-observe',
-        'removable-media',
-        'hardware-observe',
-      ]) {
+      render(<SnapPermissionsBanner report={allMissing} />);
+      for (const name of ['password-manager-service', 'mount-observe', 'removable-media']) {
         expect(screen.getByTestId(`snap-permissions-banner-row-${name}`)).toBeInTheDocument();
       }
     });
@@ -88,12 +82,12 @@ describe('SnapPermissionsBanner', () => {
             isSnap: true,
             snapName: 'jellytunes',
             interfaces: [
-              { interface: 'hardware-observe', status: 'missing', command: hardwareCommand },
+              { interface: 'removable-media', status: 'missing', command: removableCommand },
             ],
           }}
         />,
       );
-      expect(screen.getByText(hardwareCommand)).toBeInTheDocument();
+      expect(screen.getByText(removableCommand)).toBeInTheDocument();
       expect(screen.queryByText(keyringCommand)).not.toBeInTheDocument();
       expect(
         screen.queryByTestId('snap-permissions-banner-row-mount-observe'),
@@ -101,36 +95,36 @@ describe('SnapPermissionsBanner', () => {
     });
 
     it('explains the user-visible impact of each missing interface', () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+      render(<SnapPermissionsBanner report={allMissing} />);
       expect(screen.getByText(/your login isn't saved/i)).toBeInTheDocument();
       expect(screen.getByText(/do not appear in the device list/i)).toBeInTheDocument();
     });
 
     it('is announced to assistive tech as an alert', () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+      render(<SnapPermissionsBanner report={allMissing} />);
       expect(screen.getByRole('alert')).toBeInTheDocument();
     });
 
     it('mentions that JellyTunes must be restarted after connecting', () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+      render(<SnapPermissionsBanner report={allMissing} />);
       expect(screen.getByText(/restart JellyTunes/i)).toBeInTheDocument();
     });
   });
 
   describe('copy', () => {
     it('copies every command, one per line, from the copy-all button', async () => {
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+      render(<SnapPermissionsBanner report={allMissing} />);
       await act(async () => {
         fireEvent.click(screen.getByTestId('snap-permissions-banner-copy-all'));
       });
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        [keyringCommand, mountCommand, removableCommand, hardwareCommand].join('\n'),
+        [keyringCommand, mountCommand, removableCommand].join('\n'),
       );
     });
 
     it('keeps the commands visible when the clipboard write fails', async () => {
       vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'));
-      render(<SnapPermissionsBanner report={allFourMissing} />);
+      render(<SnapPermissionsBanner report={allMissing} />);
       await act(async () => {
         fireEvent.click(screen.getByTestId('snap-permissions-banner-copy-all'));
       });
@@ -142,7 +136,7 @@ describe('SnapPermissionsBanner', () => {
     // `snap connect` does not refresh the AppArmor profile of a running
     // process, so hiding the banner would hide the only signal telling the
     // user what to run and that a restart is required.
-    render(<SnapPermissionsBanner report={allFourMissing} />);
+    render(<SnapPermissionsBanner report={allMissing} />);
     expect(screen.queryByRole('button', { name: /dismiss|close|cerrar/i })).not.toBeInTheDocument();
   });
 });

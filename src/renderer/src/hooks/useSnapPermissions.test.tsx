@@ -28,9 +28,9 @@ describe('useSnapPermissions', () => {
       snapName: 'jellytunes',
       interfaces: [
         {
-          interface: 'hardware-observe' as const,
+          interface: 'removable-media' as const,
           status: 'missing' as const,
-          command: 'sudo snap connect jellytunes:hardware-observe',
+          command: 'sudo snap connect jellytunes:removable-media',
         },
       ],
     };
