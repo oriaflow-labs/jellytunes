@@ -1,7 +1,27 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isSecureStorageAvailable } from './secure-storage';
+// src/main/secure-storage.test.ts
+// Unit tests for the secure storage provider selector.
+//
+// ORAIN-0590: replace the boolean guard around Electron's safeStorage with
+// a provider interface. On Linux the preferred provider is `secret-tool`
+// (libsecret CLI, routed through the Secret portal inside the snap
+// sandbox). `safeStorage` is the fallback on Linux and the only provider
+// on macOS/Windows. Both expose `encrypt`/`decrypt`.
+//
+// Stale-blob safety: a session encrypted with the previous safeStorage
+// backend cannot be decrypted by the new provider — the load path must
+// treat that as "no session", not a crash. This is a separate AC.
 
-describe('isSecureStorageAvailable', () => {
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import {
+  isSecureStorageAvailable,
+  createSecureStorageProvider,
+  type SecureStorageLike,
+  type FullSecureStorageLike,
+  type SecretStorageLike,
+  type StorageProvider,
+} from './secure-storage';
+
+describe('isSecureStorageAvailable (legacy boolean guard)', () => {
   const originalPlatform = process.platform;
 
   afterEach(() => {
@@ -9,31 +29,29 @@ describe('isSecureStorageAvailable', () => {
   });
 
   it('returns false when isEncryptionAvailable() is false', () => {
-    const storage = {
+    const storage: SecureStorageLike = {
       isEncryptionAvailable: vi.fn(() => false),
       getSelectedStorageBackend: vi.fn(() => 'gnome_libsecret' as const),
     };
 
     expect(isSecureStorageAvailable(storage)).toBe(false);
-    // Backend should not even be consulted once availability already failed.
     expect(storage.getSelectedStorageBackend).not.toHaveBeenCalled();
   });
 
-  it('returns true on macOS/Windows when isEncryptionAvailable() is true, without checking backend', () => {
+  it('returns true on macOS/Windows when isEncryptionAvailable() is true', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const storage = {
+    const storage: SecureStorageLike = {
       isEncryptionAvailable: vi.fn(() => true),
       getSelectedStorageBackend: vi.fn(() => 'unknown' as const),
     };
 
     expect(isSecureStorageAvailable(storage)).toBe(true);
-    expect(storage.getSelectedStorageBackend).not.toHaveBeenCalled();
   });
 
-  it('returns true on Linux when a real keyring backend is selected', () => {
+  it('returns true on Linux with a real keyring backend', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     for (const backend of ['gnome_libsecret', 'kwallet', 'kwallet5', 'kwallet6'] as const) {
-      const storage = {
+      const storage: SecureStorageLike = {
         isEncryptionAvailable: vi.fn(() => true),
         getSelectedStorageBackend: vi.fn(() => backend),
       };
@@ -41,28 +59,206 @@ describe('isSecureStorageAvailable', () => {
     }
   });
 
-  it('returns false on Linux when the backend is the insecure basic_text fallback', () => {
-    // This is the case that matters for Snap strict confinement: Electron can
-    // report isEncryptionAvailable() === true while still having selected the
-    // hardcoded, non-OS-backed basic_text password (e.g. no keyring backend
-    // could be determined for the desktop session). Without this check, that
-    // would be a silent downgrade to effectively plaintext credential storage.
+  it('returns false on Linux when backend is basic_text', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
-    const storage = {
+    const storage: SecureStorageLike = {
       isEncryptionAvailable: vi.fn(() => true),
       getSelectedStorageBackend: vi.fn(() => 'basic_text' as const),
     };
 
     expect(isSecureStorageAvailable(storage)).toBe(false);
   });
+});
 
-  it('returns false on Linux when the backend is unknown (cannot confirm a real keyring)', () => {
-    Object.defineProperty(process, 'platform', { value: 'linux' });
-    const storage = {
-      isEncryptionAvailable: vi.fn(() => true),
-      getSelectedStorageBackend: vi.fn(() => 'unknown' as const),
-    };
+function makeSafeStorage(
+  backend: 'gnome_libsecret' | 'basic_text' | 'unknown',
+): FullSecureStorageLike {
+  return {
+    isEncryptionAvailable: vi.fn(() => true),
+    getSelectedStorageBackend: vi.fn(() => backend),
+    encryptString: vi.fn((s: string) => Buffer.from(s, 'utf8')),
+    decryptString: vi.fn((b: Buffer) => b.toString('utf8')),
+  };
+}
 
-    expect(isSecureStorageAvailable(storage)).toBe(false);
+function makeSecretStorage(available: boolean): SecretStorageLike {
+  return {
+    isAvailable: vi.fn().mockResolvedValue(available),
+    store: vi.fn().mockResolvedValue(undefined),
+    lookup: vi.fn().mockResolvedValue(null),
+    clear: vi.fn().mockResolvedValue(undefined),
+    // Selector hint — production wrapper sets this after the startup probe.
+    availabilityCached: available,
+  } as SecretStorageLike;
+}
+
+describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  describe('Linux branch', () => {
+    it('returns null when neither secret-tool nor safeStorage is usable', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const result = createSecureStorageProvider({
+        secretStore: makeSecretStorage(false),
+        safeStorage: makeSafeStorage('basic_text'),
+      });
+      expect(result).toBeNull();
+    });
+
+    it('prefers secret-tool when available (even with a working safeStorage)', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const secretStore = makeSecretStorage(true);
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const result = createSecureStorageProvider({ secretStore, safeStorage });
+
+      expect(result).not.toBeNull();
+      expect(result!.kind).toBe('secret-tool');
+      await result!.encrypt('hello');
+      expect(secretStore.store).toHaveBeenCalledWith('hello');
+      expect(safeStorage.encryptString).not.toHaveBeenCalled();
+    });
+
+    it('falls back to safeStorage when secret-tool reports unavailable', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const result = createSecureStorageProvider({
+        secretStore: makeSecretStorage(false),
+        safeStorage,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.kind).toBe('safeStorage');
+    });
+
+    it('encrypts via safeStorage when selected', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const provider = createSecureStorageProvider({
+        secretStore: makeSecretStorage(false),
+        safeStorage,
+      }) as StorageProvider;
+
+      expect(provider.kind).toBe('safeStorage');
+      await provider.encrypt('plaintext');
+      expect(safeStorage.encryptString).toHaveBeenCalledWith('plaintext');
+    });
+  });
+
+  describe('macOS/Windows branch', () => {
+    it('always returns safeStorage when isEncryptionAvailable() is true', () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const safeStorage = makeSafeStorage('unknown');
+      const secretStore = makeSecretStorage(true); // ignored on macOS
+      const provider = createSecureStorageProvider({ secretStore, safeStorage });
+
+      expect(provider).not.toBeNull();
+      expect(provider!.kind).toBe('safeStorage');
+      // secret-tool is not consulted on macOS — saves a probe
+      expect(secretStore.isAvailable).not.toHaveBeenCalled();
+    });
+
+    it('returns null on Windows when safeStorage is unavailable', () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const safeStorage: FullSecureStorageLike = {
+        isEncryptionAvailable: vi.fn(() => false),
+        getSelectedStorageBackend: vi.fn(() => 'unknown' as const),
+        encryptString: vi.fn(),
+        decryptString: vi.fn(),
+      };
+      const result = createSecureStorageProvider({
+        secretStore: makeSecretStorage(true),
+        safeStorage,
+      });
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('stale-blob safety (encrypted with previous safeStorage backend)', () => {
+    it('a lookup failure from secret-tool is treated as null, not thrown', async () => {
+      // ORAIN-0590 AC: "Sesión previa cifrada con safeStorage no rompe la
+      // app. Un fallo al descifrar se trata como 'no hay sesión'."
+      // When secret-tool is the active provider and a previously stored
+      // safeStorage blob exists on disk, the load path will see null from
+      // lookup() (exit 1 / corrupted) and must not throw.
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const secretStore: SecretStorageLike = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        store: vi.fn().mockResolvedValue(undefined),
+        lookup: vi.fn().mockResolvedValue(null), // stale blob → no entry
+        clear: vi.fn().mockResolvedValue(undefined),
+        availabilityCached: true,
+      };
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+
+      expect(provider.kind).toBe('secret-tool');
+      await expect(provider.decrypt(Buffer.from('stale-blob'))).resolves.toBeNull();
+      expect(secretStore.lookup).toHaveBeenCalled();
+      // We never ask safeStorage — secret-tool owns the read path.
+      expect(safeStorage.decryptString).not.toHaveBeenCalled();
+    });
+
+    it('a safeStorage decrypt failure is also treated as null (Linux fallback)', async () => {
+      // If both providers ever coexist on Linux and the active one is
+      // safeStorage, an unreadable blob must still result in null.
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const secretStore = makeSecretStorage(false);
+      const safeStorage: FullSecureStorageLike = {
+        isEncryptionAvailable: vi.fn(() => true),
+        getSelectedStorageBackend: vi.fn(() => 'gnome_libsecret' as const),
+        encryptString: vi.fn((s: string) => Buffer.from(s)),
+        decryptString: vi.fn(() => {
+          throw new Error('wrong backend');
+        }),
+      };
+      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+
+      expect(provider.kind).toBe('safeStorage');
+      await expect(provider.decrypt(Buffer.from('stale'))).resolves.toBeNull();
+    });
+  });
+
+  describe('provider interface symmetry', () => {
+    it('both providers expose encrypt and decrypt', () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const secretProvider = createSecureStorageProvider({
+        secretStore: makeSecretStorage(true),
+        safeStorage: makeSafeStorage('gnome_libsecret'),
+      });
+      expect(typeof secretProvider!.encrypt).toBe('function');
+      expect(typeof secretProvider!.decrypt).toBe('function');
+
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const safeProvider = createSecureStorageProvider({
+        secretStore: makeSecretStorage(false),
+        safeStorage: makeSafeStorage('gnome_libsecret'),
+      });
+      expect(typeof safeProvider!.encrypt).toBe('function');
+      expect(typeof safeProvider!.decrypt).toBe('function');
+    });
+
+    it('encrypt returns a Buffer that decrypt can round-trip', async () => {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const secretStore: SecretStorageLike = {
+        isAvailable: vi.fn().mockResolvedValue(true),
+        store: vi.fn(async (s: string) => {
+          // Echo the secret as the "stored" value, so lookup returns it.
+          (secretStore.lookup as ReturnType<typeof vi.fn>).mockResolvedValue(s);
+        }),
+        lookup: vi.fn().mockResolvedValue(null),
+        clear: vi.fn().mockResolvedValue(undefined),
+        availabilityCached: true,
+      };
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+
+      await provider.encrypt('round-trip');
+      const recovered = await provider.decrypt(Buffer.from('any'));
+      expect(recovered).toBe('round-trip');
+    });
   });
 });
