@@ -58,6 +58,22 @@ The sync module uses dependency injection: `SyncCore` accepts `{ api, fs, conver
 
 The sync module preserves the server's folder structure on the destination device. `serverRootPath` (auto-detected from common prefix of track paths) is stripped from each track's server path before joining with `destinationPath`. Path traversal (`..`) is explicitly blocked in `buildDestinationPath()`.
 
+## Snap Store Listing
+
+The Snap Store listing is maintained **by hand** in the snapcraft dashboard. It is not generated from this repo.
+
+Editing the listing via the web dashboard set `update_metadata_on_release` to `false`, which broke the chain from the repo to the store. The consequences:
+
+- `package.json` → `build.snapcraft.core24` (`title`, `summary`, `description`) is still baked into the `.snap` by electron-builder, and is still what `snap info` shows for a locally installed snap.
+- The store listing **ignores** it. Uploading new revisions never changes the listing text.
+- `version` is the exception: it flows from `package.json` into every revision automatically.
+
+So the copy exists in two independent places and can drift silently — nothing in CI detects it. When changing user-facing copy, update `package.json` **and** the dashboard.
+
+`license`, `contact`, `website`, `categories` and `keywords` only exist in the dashboard. electron-builder cannot emit them: `SnapOptions24` has no such fields, and `categories`/`keywords` are not snapcraft.yaml keys in any variant.
+
+There is no changelog or "what's new" field in snapcraft.yaml, and the store listing has no per-version section. Apps that show release notes write them into the description body manually.
+
 ## Testing Strategy
 
 - **Unit tests** live alongside source in `src/sync/*.test.ts` and also in `tests/unit/`
