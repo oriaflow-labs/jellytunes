@@ -21,14 +21,15 @@ Install JellyTunes from the Snap Store:
 sudo snap install jellytunes --beta
 ```
 
-JellyTunes uses strict confinement. The interfaces needed for USB/SD sync and secure credential storage are not auto-connected by Snap, so connect them once after installation:
+JellyTunes uses strict confinement. The interfaces needed for USB/SD sync are not auto-connected by Snap, so connect them once after installation:
 
 ```bash
 sudo snap connect jellytunes:removable-media
 sudo snap connect jellytunes:mount-observe
-sudo snap connect jellytunes:password-manager-service
 sudo snap connect jellytunes:hardware-observe
 ```
+
+Session encryption is handled via `secret-tool` (libsecret routed through the Secret portal, which works under strict confinement without any plug). No `password-manager-service` connection is needed.
 
 The Snap Store manages application refreshes automatically. The app's manual release-update banner is therefore not used by the Snap build.
 

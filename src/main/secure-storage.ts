@@ -60,13 +60,6 @@ export interface SecretStorageLike {
   store(secret: string): Promise<void>;
   lookup(): Promise<string | null>;
   clear(): Promise<void>;
-  /**
-   * Selector hint: production wrappers cache the resolved `isAvailable()`
-   * boolean at startup and expose it here so the synchronous selector
-   * can pick a provider without re-awaiting on every call. When absent,
-   * the selector treats `secret-tool` as unreachable.
-   */
-  availabilityCached?: boolean;
 }
 
 /** Linux backends backed by a real OS/desktop keyring. */
@@ -103,6 +96,13 @@ export interface StorageProvider {
 export interface SelectProviderInput {
   secretStore: SecretStorageLike;
   safeStorage: FullSecureStorageLike;
+  /**
+   * Result of `await secretStore.isAvailable()` resolved once at startup.
+   * Required on Linux (where the selector has to pick a provider
+   * synchronously) — omitted values are treated as `false`, which routes
+   * the call to safeStorage just like an unreachable binary.
+   */
+  secretToolAvailable?: boolean;
 }
 
 /**
@@ -111,16 +111,18 @@ export interface SelectProviderInput {
  * Selection rules:
  *   - On macOS / Windows → `safeStorage` (no probe of secret-tool, since
  *     libsecret is not the primary keyring on those platforms).
- *   - On Linux → probe `secret-tool` first; if reachable, use it.
- *   - On Linux, if secret-tool is not reachable but safeStorage is
- *     backed by a real keyring (libsecret/kwallet, not basic_text),
- *     fall back to safeStorage.
+ *   - On Linux → use the cached availability of `secret-tool`. When the
+ *     cache says reachable, prefer secret-tool. Otherwise fall back to
+ *     safeStorage when backed by a real keyring (libsecret/kwallet,
+ *     not basic_text).
  *   - Otherwise → null. The IPC handler returns `encryption_unavailable`
  *     and the renderer shows the no-persistence banner (ORAIN-0590 AC).
  *
- * The probe is async but the selector is sync — we deliberately accept
- * an already-resolved `secretStore` so the IPC handler can `await` the
- * probe once at startup and reuse the same handle for every call.
+ * The probe is async but the selector is sync — callers must `await`
+ * `secretStore.isAvailable()` once at startup and pass the result in
+ * `secretToolAvailable`. This keeps the selector itself trivially
+ * testable and synchronous, and avoids mutating the store to glue the
+ * cached value onto a third-party wrapper.
  */
 export function createSecureStorageProvider(input: SelectProviderInput): StorageProvider | null {
   const { safeStorage } = input;
@@ -129,37 +131,17 @@ export function createSecureStorageProvider(input: SelectProviderInput): Storage
     return safeStorage.isEncryptionAvailable() ? makeSafeStorageProvider(safeStorage) : null;
   }
 
-  // Linux: pick the best available. We can't await here — callers inject
-  // a pre-resolved handle. For tests, isAvailable is sync via a mock.
-  // We use a small trick: read the resolved boolean off a synchronous
-  // hint on the input. Production wires this via an async factory in
-  // `src/main/index.ts` that resolves `isAvailable()` once.
   return pickLinuxProvider(input);
 }
 
 /**
  * The synchronous Linux decision. Production callers should pre-await
- * `secretStore.isAvailable()` and supply the result via a wrapper that
- * makes isAvailable return the cached boolean — see `index.ts` for the
- * adapter that does this. Tests use the same shape.
- *
- * We can't `await` inside a non-async function, so the production wiring
- * in `index.ts` calls `await secretStore.isAvailable()` first and only
- * then invokes `createSecureStorageProvider` with a `secretStore` whose
- * `isAvailable` returns the cached boolean. This keeps the selector
- * itself trivially testable and synchronous.
+ * `secretStore.isAvailable()` and pass the boolean via `secretToolAvailable`.
  */
 function pickLinuxProvider(input: SelectProviderInput): StorageProvider | null {
   const { secretStore, safeStorage } = input;
 
-  // Probe secret-tool: the production wiring awaits `isAvailable()` once
-  // at startup and caches the boolean on the wrapper, then constructs a
-  // selector-friendly wrapper whose `isAvailable()` returns the cached
-  // value wrapped in Promise.resolve(). Tests do the same. The selector
-  // here peeks at the cached value via a small adapter hook below.
-  const cached = readCachedAvailability(secretStore);
-
-  if (cached === true) {
+  if (input.secretToolAvailable === true) {
     return makeSecretToolProvider(secretStore);
   }
 
@@ -169,23 +151,6 @@ function pickLinuxProvider(input: SelectProviderInput): StorageProvider | null {
   }
 
   return null;
-}
-
-/**
- * Read the cached availability boolean the production wrapper exposes.
- * Production: `await secretStore.isAvailable()` resolves once at startup
- * and the wrapper stores the result. We don't await here — the caller
- * must inject a wrapper whose `isAvailable()` is `Promise.resolve(cached)`.
- *
- * We don't have a clean way to read that synchronously from a Promise,
- * so the selector relies on a small duck-typed `availabilityCached` hint
- * the production wrapper exposes. When the hint is missing (legacy tests,
- * non-cached wrapper), we default to `false` — i.e. we don't trust
- * secret-tool until the wrapper tells us it probed it.
- */
-function readCachedAvailability(store: SecretStorageLike): boolean | null {
-  const hint = (store as SecretStorageLike & { availabilityCached?: boolean }).availabilityCached;
-  return typeof hint === 'boolean' ? hint : null;
 }
 
 function makeSecretToolProvider(store: SecretStorageLike): StorageProvider {

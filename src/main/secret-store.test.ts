@@ -19,7 +19,12 @@
 // wires `write` to `child.stdin.write(chunk)` and closes the stream.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createSecretStore, type SecretToolHandle, type SecretToolRunner } from './secret-store';
+import {
+  createSecretStore,
+  MAX_SECRET_BYTES,
+  type SecretToolHandle,
+  type SecretToolRunner,
+} from './secret-store';
 
 function makeHandle(result: SecretToolHandle['result'], captured: string[] = []): SecretToolHandle {
   return {
@@ -88,6 +93,68 @@ describe('createSecretStore', () => {
       const store = createSecretStore({ runner });
 
       await expect(store.store('x')).rejects.toThrow(/keyring locked/);
+    });
+
+    it('rejects oversized secrets (defence-in-depth cap)', async () => {
+      // MAX_SECRET_BYTES is 64 KB. Anything above should throw *before* the
+      // runner is called — a malformed renderer must not be able to push
+      // multi-MB through `secret-tool store` stdin.
+      const runner = vi.fn<SecretToolRunner>().mockReturnValue(makeHandle(ok()));
+      const store = createSecretStore({ runner });
+      const oversized = 'x'.repeat(MAX_SECRET_BYTES + 1);
+
+      await expect(store.store(oversized)).rejects.toThrow(/too large/);
+      expect(runner).not.toHaveBeenCalled();
+    });
+
+    it('accepts a secret at exactly the cap', async () => {
+      // Boundary check — the cap is inclusive, not exclusive.
+      const runner = vi.fn<SecretToolRunner>().mockReturnValue(makeHandle(ok()));
+      const store = createSecretStore({ runner });
+      const at = 'x'.repeat(MAX_SECRET_BYTES);
+
+      await expect(store.store(at)).resolves.toBeUndefined();
+      expect(runner).toHaveBeenCalledTimes(1);
+    });
+
+    it('measures the secret in UTF-8 bytes, not JS code units', async () => {
+      // A 4-byte CJK char repeated `MAX_SECRET_BYTES/2` times is 2× the
+      // cap in bytes but only half in `.length`. We must measure bytes.
+      const runner = vi.fn<SecretToolRunner>().mockReturnValue(makeHandle(ok()));
+      const store = createSecretStore({ runner });
+      const cjk = '日'.repeat(MAX_SECRET_BYTES / 2 + 1); // > MAX_SECRET_BYTES bytes
+
+      await expect(store.store(cjk)).rejects.toThrow(/too large/);
+      expect(runner).not.toHaveBeenCalled();
+    });
+
+    it('invokes runner before reading result (lazy stdin population)', async () => {
+      // Smoke check that the production-shaped protocol still holds:
+      // runner is constructed, write(secret) populates the handle, then
+      // the store reads result. The test mocks just simulate both steps.
+      const captured: string[] = [];
+      const order: string[] = [];
+      const runner: SecretToolRunner = (args) => {
+        order.push(`runner(${args.join(' ')})`);
+        return {
+          get result(): SecretToolHandle['result'] {
+            order.push('read result');
+            return { status: 0 };
+          },
+          write: (chunk) => {
+            order.push(`write(${chunk})`);
+            captured.push(chunk);
+          },
+        };
+      };
+      const store = createSecretStore({ runner });
+
+      await store.store('lazy-test-secret');
+
+      expect(order[0]).toBe('runner(store --label=jellytunes-session service jellytunes)');
+      expect(order).toContain('write(lazy-test-secret)');
+      expect(order[order.length - 1]).toBe('read result');
+      expect(captured.join('')).toBe('lazy-test-secret');
     });
   });
 

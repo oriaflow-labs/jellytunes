@@ -2,16 +2,21 @@
  * Production adapter: child_process.spawn → SecretToolRunner.
  *
  * ORAIN-0590: real-world wiring for `src/main/secret-store.ts`. Encapsulates
- * the spawn, the stdin write+close, the timeout (via AbortController), and
- * the stdout/stderr collection. Tests of `secret-store` never reach this
- * file — they mock the runner.
+ * the spawn, the stdin write, the timeout, and the stdout/stderr collection.
+ * Tests of `secret-store` never reach this file — they mock the runner.
  *
  * Design notes:
- *   - The runner is synchronous from the caller's POV: spawn, write,
- *     await exit, return the result. We use `child_process.spawnSync` for
- *     predictability under the snap sandbox; `spawn` would require us to
- *     manage the lifecycle ourselves and there is no parallelism benefit
- *     here (session save/load is a one-shot IPC call).
+ *   - The runner contract gives the store layer a `handle` whose `write`
+ *     method pipes the secret into the child's stdin BEFORE the result is
+ *     consulted. We model that with a lazy `result` getter: `spawnSync` is
+ *     deferred until the store first reads `handle.result`, by which time
+ *     it has already called `handle.write(secret)`. Without this, spawnSync
+ *     would receive an empty stdin buffer, the child would see EOF, and
+ *     `secret-tool store` would never record the secret.
+ *   - We use `child_process.spawnSync` for predictability under the snap
+ *     sandbox; `spawn` would require us to manage the lifecycle ourselves
+ *     and there is no parallelism benefit here (session save/load is a
+ *     one-shot IPC call).
  *   - Timeout via `spawnSync({ timeout })` — when it fires, the child is
  *     SIGTERM'd and the returned status is `null`, which the store maps
  *     to a real error rather than a hang.
@@ -21,7 +26,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import type { SecretToolHandle, SecretToolRunner } from './secret-store';
+import type { SecretToolHandle, SecretToolResult, SecretToolRunner } from './secret-store';
 
 const SECRET_TOOL_BIN = 'secret-tool';
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -36,23 +41,22 @@ export interface AdapterOptions {
 /**
  * Build a `SecretToolRunner` backed by `child_process.spawnSync`.
  *
- * The returned runner writes the secret into stdin synchronously, waits
- * up to `timeoutMs` for the child to exit, and surfaces the captured
- * stdout/stderr. spawnSync's return for a killed-by-timeout child has
- * `status:null` and `error.code === 'ETIMEDOUT'`, which the store layer
- * treats as a normal failure.
+ * Returns a function that yields a `SecretToolHandle` whose `result` is
+ * resolved lazily on first read — by which point the store must have
+ * called `write(secret)`. See the file header for why ordering matters.
  */
 export function createSecretToolRunner(options: AdapterOptions = {}): SecretToolRunner {
   const bin = options.bin ?? SECRET_TOOL_BIN;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return (args) => {
-    // Buffer for whatever the runner hands to stdin.write.
+    // Buffer for whatever the runner hands to stdin.write. Must be settled
+    // BEFORE spawnSync runs, so spawnSync is deferred until the store reads
+    // `handle.result` (at which point it has already invoked `write`).
     let stdinPayload = '';
     let stdinFlushed = false;
 
     const handle: SecretToolHandle = {
-      result: { status: -1 }, // overwritten below
       write: (chunk) => {
         // Capture exactly one chunk. Multiple writes would change the
         // protocol contract — keep it simple.
@@ -61,30 +65,35 @@ export function createSecretToolRunner(options: AdapterOptions = {}): SecretTool
           stdinFlushed = true;
         }
       },
+      get result(): SecretToolResult {
+        if (!stdinFlushed) {
+          // Defence-in-depth: protect any future caller that reads `result`
+          // before `write`. We don't want to spawn with an empty buffer
+          // because that is the exact bug this module exists to avoid.
+          throw new Error('secret-tool handle: read result before write(secret)');
+        }
+        const child = spawnSync(bin, [...args], {
+          input: stdinPayload,
+          timeout: timeoutMs,
+          encoding: 'utf8',
+        });
+
+        if (child.error) {
+          // spawn ENOENT, EACCES, etc.
+          return {
+            status: null,
+            stderr: child.error.message,
+          };
+        }
+
+        return {
+          status: child.status,
+          stdout: typeof child.stdout === 'string' ? child.stdout : undefined,
+          stderr: typeof child.stderr === 'string' ? child.stderr : undefined,
+        };
+      },
     };
 
-    const child = spawnSync(bin, [...args], {
-      input: stdinPayload,
-      timeout: timeoutMs,
-      encoding: 'utf8',
-      // strip the secret from any captured stderr/stdout — secret-tool
-      // doesn't echo input, but a misbehaving build of it might. Defensive.
-    });
-
-    if (child.error) {
-      // spawn ENOENT, EACCES, etc.
-      handle.result = {
-        status: null,
-        stderr: child.error.message,
-      };
-      return handle;
-    }
-
-    handle.result = {
-      status: child.status,
-      stdout: typeof child.stdout === 'string' ? child.stdout : undefined,
-      stderr: typeof child.stderr === 'string' ? child.stderr : undefined,
-    };
     return handle;
   };
 }

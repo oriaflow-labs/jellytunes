@@ -87,9 +87,7 @@ function makeSecretStorage(available: boolean): SecretStorageLike {
     store: vi.fn().mockResolvedValue(undefined),
     lookup: vi.fn().mockResolvedValue(null),
     clear: vi.fn().mockResolvedValue(undefined),
-    // Selector hint — production wrapper sets this after the startup probe.
-    availabilityCached: available,
-  } as SecretStorageLike;
+  };
 }
 
 describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
@@ -105,6 +103,7 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       const result = createSecureStorageProvider({
         secretStore: makeSecretStorage(false),
         safeStorage: makeSafeStorage('basic_text'),
+        secretToolAvailable: false,
       });
       expect(result).toBeNull();
     });
@@ -113,7 +112,11 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       Object.defineProperty(process, 'platform', { value: 'linux' });
       const secretStore = makeSecretStorage(true);
       const safeStorage = makeSafeStorage('gnome_libsecret');
-      const result = createSecureStorageProvider({ secretStore, safeStorage });
+      const result = createSecureStorageProvider({
+        secretStore,
+        safeStorage,
+        secretToolAvailable: true,
+      });
 
       expect(result).not.toBeNull();
       expect(result!.kind).toBe('secret-tool');
@@ -128,6 +131,7 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       const result = createSecureStorageProvider({
         secretStore: makeSecretStorage(false),
         safeStorage,
+        secretToolAvailable: false,
       });
 
       expect(result).not.toBeNull();
@@ -140,11 +144,25 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       const provider = createSecureStorageProvider({
         secretStore: makeSecretStorage(false),
         safeStorage,
+        secretToolAvailable: false,
       }) as StorageProvider;
 
       expect(provider.kind).toBe('safeStorage');
       await provider.encrypt('plaintext');
       expect(safeStorage.encryptString).toHaveBeenCalledWith('plaintext');
+    });
+
+    it('treats a missing secretToolAvailable as false (does not trust unprobed wrapper)', () => {
+      // Guards against a regression where the cached boolean is implicitly
+      // truthy — that would have us select secret-tool without ever having
+      // proved it reachable.
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const safeStorage = makeSafeStorage('gnome_libsecret');
+      const result = createSecureStorageProvider({
+        secretStore: makeSecretStorage(true),
+        safeStorage,
+      });
+      expect(result!.kind).toBe('safeStorage');
     });
   });
 
@@ -190,10 +208,13 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
         store: vi.fn().mockResolvedValue(undefined),
         lookup: vi.fn().mockResolvedValue(null), // stale blob → no entry
         clear: vi.fn().mockResolvedValue(undefined),
-        availabilityCached: true,
       };
       const safeStorage = makeSafeStorage('gnome_libsecret');
-      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+      const provider = createSecureStorageProvider({
+        secretStore,
+        safeStorage,
+        secretToolAvailable: true,
+      }) as StorageProvider;
 
       expect(provider.kind).toBe('secret-tool');
       await expect(provider.decrypt(Buffer.from('stale-blob'))).resolves.toBeNull();
@@ -215,7 +236,11 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
           throw new Error('wrong backend');
         }),
       };
-      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+      const provider = createSecureStorageProvider({
+        secretStore,
+        safeStorage,
+        secretToolAvailable: false,
+      }) as StorageProvider;
 
       expect(provider.kind).toBe('safeStorage');
       await expect(provider.decrypt(Buffer.from('stale'))).resolves.toBeNull();
@@ -228,6 +253,7 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       const secretProvider = createSecureStorageProvider({
         secretStore: makeSecretStorage(true),
         safeStorage: makeSafeStorage('gnome_libsecret'),
+        secretToolAvailable: true,
       });
       expect(typeof secretProvider!.encrypt).toBe('function');
       expect(typeof secretProvider!.decrypt).toBe('function');
@@ -236,6 +262,7 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
       const safeProvider = createSecureStorageProvider({
         secretStore: makeSecretStorage(false),
         safeStorage: makeSafeStorage('gnome_libsecret'),
+        secretToolAvailable: false,
       });
       expect(typeof safeProvider!.encrypt).toBe('function');
       expect(typeof safeProvider!.decrypt).toBe('function');
@@ -251,10 +278,13 @@ describe('createSecureStorageProvider (ORAIN-0590 selector)', () => {
         }),
         lookup: vi.fn().mockResolvedValue(null),
         clear: vi.fn().mockResolvedValue(undefined),
-        availabilityCached: true,
       };
       const safeStorage = makeSafeStorage('gnome_libsecret');
-      const provider = createSecureStorageProvider({ secretStore, safeStorage }) as StorageProvider;
+      const provider = createSecureStorageProvider({
+        secretStore,
+        safeStorage,
+        secretToolAvailable: true,
+      }) as StorageProvider;
 
       await provider.encrypt('round-trip');
       const recovered = await provider.decrypt(Buffer.from('any'));

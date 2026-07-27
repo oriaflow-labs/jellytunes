@@ -790,12 +790,15 @@ let sessionStorageProvider: StorageProvider | null = null;
  */
 export async function initSecureStorageProvider(): Promise<StorageProvider | null> {
   const secretRunner = createSecretToolRunner();
-  const rawStore = createSecretStore({ runner: secretRunner });
-  const availabilityCached = await rawStore.isAvailable();
-  const secretStore = Object.assign(rawStore, { availabilityCached });
+  const secretStore = createSecretStore({ runner: secretRunner });
+  // Resolve the probe exactly once at startup. The selector is sync, so we
+  // wait here and feed the boolean in as `secretToolAvailable` — no
+  // mutation of the wrapper, no Object.assign duck-typed patch.
+  const secretToolAvailable = await secretStore.isAvailable();
   sessionStorageProvider = createSecureStorageProvider({
     secretStore,
     safeStorage,
+    secretToolAvailable,
   });
   if (sessionStorageProvider) {
     log.info(`Session storage: using ${sessionStorageProvider.kind} provider`);
@@ -809,14 +812,17 @@ ipcMain.handle('session:save', async (_event, plaintext: string) => {
   try {
     const provider = sessionStorageProvider;
     if (!provider) {
-      return { success: false, reason: 'encryption_unavailable' };
+      return { success: false, reason: 'encryption_unavailable' as const };
     }
     const encrypted = await provider.encrypt(plaintext);
     fs.writeFileSync(SESSION_FILE(), encrypted);
     return { success: true };
   } catch (e) {
     log.error('Failed to save session:', e);
-    return { success: false, reason: String(e) };
+    // Typed discriminant — `'storage_error'` is reserved for runtime
+    // failures distinct from the boot-time `'encryption_unavailable'`
+    // case. The renderer branches on this exact value.
+    return { success: false, reason: 'storage_error' as const };
   }
 });
 
