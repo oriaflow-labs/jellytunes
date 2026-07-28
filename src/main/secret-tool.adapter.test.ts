@@ -63,19 +63,31 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
 
   it('does not import the secret value into the logger on lookup success', () => {
     // AC1: NEVER log stdout of lookup — that is the plaintext session.
-    // Use `sh` as the binary so we can drive a deterministic exit-0 path
-    // even where secret-tool isn't installed. The lookup stdout will
-    // contain "super-secret" — if the adapter ever logged it, this test
-    // would catch the regression.
+    // The spawn override drives a deterministic exit-0 path on every OS
+    // (ORAIN-0614): this used to shell out to `sh -c`, which does not
+    // exist on the Windows runner, so spawnSync returned ENOENT and the
+    // assertions below saw status:null instead of 0. The stub also
+    // asserts the stdin payload reached spawnSync, which is the ordering
+    // contract the real `sh` invocation was implicitly covering.
     const { logger, records } = makeCapturingLogger();
-    const runner = createSecretToolRunner({ logger, bin: 'sh', timeoutMs: 2000 });
+    let observedInput: unknown;
+    const runner = createSecretToolRunner({
+      logger,
+      bin: 'never-runs',
+      spawn: (_bin, _args, opts) => {
+        observedInput = opts.input;
+        return { status: 0, stdout: 'super-secret\n' };
+      },
+    });
 
-    const handle = runner(['-c', 'echo super-secret; exit 0']);
+    const handle = runner(['lookup', 'service', 'jellytunes']);
     handle.write('lookup-stdin-payload');
     const result: SecretToolResult = handle.result;
 
     expect(result.status).toBe(0); // smoke check the spy was wired
     expect(result.stdout).toBe('super-secret\n');
+    // write() must have been flushed into spawnSync before the result was read.
+    expect(observedInput).toBe('lookup-stdin-payload');
     // No logger record references the secret. The lookup stdout carrying
     // the plaintext must never enter the log record.
     const dump = JSON.stringify(records);
@@ -159,13 +171,18 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
 
   it('classifies stderr into a sanitised category, never echoing the full stderr', () => {
     const { logger, records } = makeCapturingLogger();
-    // Use a shell command that emits a long stderr string we want bounded.
-    // secret-tool is unavailable in CI; we just need any stderr capture.
-    // 500-byte payload ensures STDERR_LOG_CAP truncates it.
+    // A 500-byte stderr payload ensures STDERR_LOG_CAP truncates it.
+    // Delivered through the spawn override rather than `sh -c ... >&2`
+    // so the non-zero-exit branch is driven identically on every OS
+    // (ORAIN-0614 — `sh` is absent on the Windows runner).
     const long = 'A'.repeat(500);
-    const runner = createSecretToolRunner({ logger, bin: 'sh', timeoutMs: 2000 });
+    const runner = createSecretToolRunner({
+      logger,
+      bin: 'never-runs',
+      spawn: () => ({ status: 2, stderr: `${long}\n` }),
+    });
 
-    const handle = runner(['-c', `echo "${long}" >&2; exit 2`]);
+    const handle = runner(['lookup', 'service', 'jellytunes']);
     handle.write('');
     const result = handle.result;
 
@@ -184,9 +201,16 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
 
   it('does not log on lookup success (no noise in normal operation)', () => {
     const { logger, records } = makeCapturingLogger();
-    const runner = createSecretToolRunner({ logger, bin: 'sh', timeoutMs: 2000 });
+    // Spawn override for OS-independence (ORAIN-0614): the previous
+    // `sh -c 'echo ok; exit 0'` returned ENOENT on Windows, so the
+    // adapter logged a spawn-error record and this assertion saw 1.
+    const runner = createSecretToolRunner({
+      logger,
+      bin: 'never-runs',
+      spawn: () => ({ status: 0, stdout: 'ok\n' }),
+    });
 
-    const handle = runner(['-c', 'echo ok; exit 0']);
+    const handle = runner(['lookup', 'service', 'jellytunes']);
     handle.write('');
     void handle.result;
 
