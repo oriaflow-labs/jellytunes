@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0] — 2026-07-28
+
+### Added
+
+- **Snap package** — JellyTunes is on the Snap Store, so installing on Linux is one command and updates arrive on their own through snapd. If an interface it needs is not connected, the app says which one and gives you the command to connect it.
+- **AppArmor profile in the `.deb`** — fixes the package failing to launch on Ubuntu 24.04.
+
+### Changed
+
+- **AppImage is deprecated.** It still runs, but Ubuntu 24.04+ can block Electron's sandbox, so it is no longer the recommended way to install. The [migration guide](docs/INSTALLATION.md) covers moving to Snap or `.deb`.
+- `.deb` package metadata completed: multi-size icon set, synopsis, and homepage.
+
+### Fixed
+
+- The devices and folders list in the sidebar scrolls again in short viewports.
+- The version update check no longer throws when the server answers with something unexpected.
+- FFmpeg binaries are pinned per platform, so conversion behaves the same on every machine.
+- USB and SD cards are detected reliably on Linux without shelling out to `df`.
+
+### Internal
+
+- Snap strict confinement work: USB and mount detection reworked to drop the `hardware-observe` and `mount-observe` interfaces, session storage moved to `secret-tool` (libsecret and the Secret portal) behind a provider selector, and interface state probed through `snapctl`.
+- Snap builds and publishes from CI via LXD; release publishing is gated behind artifact verification.
+- Windows CI fixed, and the logger no longer breaks under bundling.
+- Test coverage added for packaging contracts, the secret store, and the Snap permissions mapper.
+
 ## [0.5.0] — 2026-06-07
 
 ### Added

@@ -1,40 +1,40 @@
-## JellyTunes 0.5.0 — Your whole library, organized your way
+## JellyTunes 0.6.0 — Now on the Snap Store
 
-Your music collection is more than a flat list of artists, and now JellyTunes treats it that way. This release brings real Album Artist and Genre browsing, consistent playback volume with ReplayGain, and a cleaner, more focused window. Behind the scenes, we spent a lot of time making sync just work, even on the messiest libraries.
+Installing JellyTunes on Linux used to mean downloading an AppImage and hoping your distro let it run. This release fixes that. JellyTunes is on the Snap Store, the `.deb` works on Ubuntu 24.04, and AppImage steps back to legacy.
 
 ### What's new
 
-**Browse by Album Artist.** You shouldn't have to scroll past a hundred "Various Artists" entries to find the album you're after. The new Album Artists tab gives you a clean view of your collection, with its own selection and sync that stays completely separate from individual track artists.
-
-**Find music by genre.** Sometimes you don't want an artist, you want a mood. The new Genres tab lets you browse, filter, and sync a whole genre at once, with genre artwork right there in the list and a live count of what you've got. Flip a genre on and it syncs from then on.
-
-**The right volume on every track.** No more reaching for the volume knob between songs. JellyTunes now pulls ReplayGain tags straight from Jellyfin and embeds them, so quiet tracks and loud tracks land at a level that just feels right.
-
-### Reliability you can count on
-
-This is where most of the work went. We wanted sync to be something you never have to think about, especially on big libraries:
-
-- Album and track details now sync correctly every time when you sync by artist
-- Tracks that show up on more than one album sync once instead of over and over, so you're not waiting on duplicate transfers
-- Storage tracking got a lot sharper. Disk usage refreshes right after a sync, and the storage bar actually reflects what's on your device
-- Large libraries load smoothly now, even against servers that get loose with pagination, so no more endless spinners
-- Steadier file handling means your tracks end up exactly where they should
-
----
-
-### Installing on Linux
-
-**AppImage (legacy):** The AppImage remains available temporarily, but it is deprecated on Ubuntu 24.04+ because Electron's user namespace sandbox can be blocked by the OS. New installations should use Snap or `.deb`; existing AppImage users should follow the [migration guide](docs/INSTALLATION.md).
-
-#### Snap (recommended)
-
-The Snap build isn't attached to this release — install or update it straight from the Snap Store instead, since a manually downloaded `.snap` won't carry the Store's signature:
+**Install from the Snap Store.** One command, and updates arrive on their own from then on:
 
 ```
 snap install jellytunes --beta
 ```
 
-After installation, connect the interfaces required for USB/SD sync and secure storage as described in the [migration guide](docs/INSTALLATION.md).
+**The `.deb` works on Ubuntu 24.04.** It shipped without an AppArmor profile, which meant the app refused to launch on 24.04 and left you staring at a sandbox error. The profile is now included and enabled, and the package metadata is complete.
+
+**AppImage is deprecated.** It still runs today, but Ubuntu 24.04+ can block the sandbox Electron relies on, and that is not something we can fix from our side. If you're on the AppImage, the [migration guide](docs/INSTALLATION.md) walks you through moving to Snap or `.deb`.
+
+### Also fixed
+
+- The devices and folders list in the sidebar scrolls again on short windows and small screens
+- The version update check no longer throws when the server answers with something unexpected
+- FFmpeg binaries are pinned per platform, so conversion behaves the same on every machine
+
+---
+
+### Installing on Linux
+
+**Snap (recommended).** The `.snap` isn't attached to this release on purpose. Install it from the Store instead, since a manually downloaded file won't carry the Store's signature:
+
+```
+snap install jellytunes --beta
+```
+
+Sync to USB and SD cards needs a couple of Snap interfaces connected. Most systems handle this automatically; if yours doesn't, JellyTunes tells you which one is missing and the exact command to run.
+
+**`.deb`.** Download it from the assets below.
+
+**AppImage (legacy).** Still available, but deprecated. See the [migration guide](docs/INSTALLATION.md).
 
 ---
 
