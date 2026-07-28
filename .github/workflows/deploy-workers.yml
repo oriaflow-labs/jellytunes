@@ -6,6 +6,9 @@ on:
     paths:
       - 'workers/**'
 
+permissions:
+  contents: read
+
 jobs:
   deploy-updates-worker:
     runs-on: ubuntu-latest
