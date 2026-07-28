@@ -195,6 +195,20 @@ describe('createSecretStore', () => {
       await expect(store.lookup()).rejects.toThrow(/portal died/);
     });
 
+    it('throws when exit code 1 carries a real error, not a "no such" miss', async () => {
+      // secret-tool overloads exit 1 for "no matching entry" AND for
+      // unrelated failures like a locked keyring that can't complete its
+      // interactive unlock prompt. Only the wording distinguishes them —
+      // treating every exit-1 as "no entry" masks a real failure as a
+      // silent "no saved session".
+      const runner = vi
+        .fn<SecretToolRunner>()
+        .mockReturnValue(makeHandle(failed(1, 'secret-tool: user interaction failed')));
+      const store = createSecretStore({ runner });
+
+      await expect(store.lookup()).rejects.toThrow(/user interaction failed/);
+    });
+
     it('trims trailing newline that secret-tool appends', async () => {
       const runner = vi.fn<SecretToolRunner>().mockReturnValue(makeHandle(ok('value\n')));
       const store = createSecretStore({ runner });
@@ -223,6 +237,15 @@ describe('createSecretStore', () => {
 
       await expect(store.clear()).resolves.toBeUndefined();
     });
+
+    it('throws when exit code 1 carries a real error, not an empty keyring', async () => {
+      const runner = vi
+        .fn<SecretToolRunner>()
+        .mockReturnValue(makeHandle(failed(1, 'secret-tool: user interaction failed')));
+      const store = createSecretStore({ runner });
+
+      await expect(store.clear()).rejects.toThrow(/user interaction failed/);
+    });
   });
 
   describe('availability probe', () => {
@@ -240,6 +263,20 @@ describe('createSecretStore', () => {
       const store = createSecretStore({ runner });
 
       await expect(store.isAvailable()).resolves.toBe(true);
+    });
+
+    it('reports unavailable when exit code 1 carries a real error (ORAIN-0615 follow-up)', async () => {
+      // Regression: `secret-tool: user interaction failed` (a locked
+      // keyring that can't complete an interactive unlock under strict
+      // Snap confinement) used to be indistinguishable from "no entry
+      // yet" and reported available:true — the selector then picked
+      // secret-tool as the provider and every save failed downstream.
+      const runner = vi
+        .fn<SecretToolRunner>()
+        .mockReturnValue(makeHandle(failed(1, 'secret-tool: user interaction failed')));
+      const store = createSecretStore({ runner });
+
+      await expect(store.isAvailable()).resolves.toBe(false);
     });
 
     it('reports unavailable when secret-tool exits 127 (not installed)', async () => {

@@ -158,12 +158,31 @@ const LABEL = 'jellytunes-session';
 export const MAX_SECRET_BYTES = 64 * 1024;
 
 /**
- * The keyring replied (even with "no entry"). Exit 0 and exit 1 both
- * prove `secret-tool` ran to completion — distinct from a real failure
+ * `secret-tool` exits 1 both for "no matching entry" AND for unrelated
+ * failures that happen to share the same exit code — e.g. a locked
+ * keyring that can't complete its interactive unlock prompt exits 1 with
+ * stderr `secret-tool: user interaction failed`. The exit code alone
+ * cannot tell these apart; only the wording can. Real-world "not found"
+ * responses are either silent or say some variant of "no such" (see
+ * `classifyStderr`'s `non_zero_exit_missing` bucket in
+ * `secret-tool.adapter.ts`, which this mirrors) — anything else at
+ * status 1 is a real failure and must not be swallowed as an empty
+ * keyring.
+ */
+function isGenuineNotFound(result: SecretToolResult): boolean {
+  if (result.status !== 1) return false;
+  const stderr = result.stderr?.trim() ?? '';
+  return stderr.length === 0 || /no such/i.test(stderr);
+}
+
+/**
+ * The keyring replied with a real answer: found (exit 0) or genuinely
+ * absent (exit 1, see `isGenuineNotFound`). Distinct from a failure that
+ * also happens to exit 1 (e.g. interaction failure) or a real failure
  * (exit 127, signal, ENOENT, timeout).
  */
-function keyringReachable(status: number | null): boolean {
-  return status === 0 || status === 1;
+function keyringReachable(result: SecretToolResult): boolean {
+  return result.status === 0 || isGenuineNotFound(result);
 }
 
 function timedOut(result: SecretToolResult): boolean {
@@ -222,7 +241,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
         // secret-tool appends a trailing newline — strip it.
         return (result.stdout ?? '').replace(/\n$/, '');
       }
-      if (result.status === 1) {
+      if (isGenuineNotFound(result)) {
         // "No such entry" — normal cold-start state.
         return null;
       }
@@ -234,7 +253,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
       const result = readResult(handle);
       // Clearing a non-existent entry is fine — clear is idempotent.
       if (timedOut(result)) throw buildError('clear', result);
-      if (result.status === null || result.status === 0 || result.status === 1) return;
+      if (result.status === 0 || isGenuineNotFound(result)) return;
       throw buildError('clear', result);
     },
 
@@ -248,7 +267,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
         // a separate `operationHint`; the production adapter honours it.
         const handle = runner({ args: ['lookup', ...ATTRS], operationHint: 'isAvailable' });
         const result = readResult(handle);
-        return keyringReachable(result.status);
+        return keyringReachable(result);
       } catch (e: unknown) {
         // ORAIN-0615 AC3: this `catch` is why the ORAIN-0601 regression was
         // invisible. The adapter threw before spawning, this swallowed the
