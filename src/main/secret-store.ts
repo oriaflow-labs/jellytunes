@@ -22,12 +22,22 @@
  * through the REAL adapter and mocks only `spawnSync` — the older suites
  * mocked both sides of this contract and so could not see the bug.
  *
- * Still open, and NOT to be described as working until confirmed on a
- * clean VM install:
- *   - `package.json` does not stage `libsecret-tools`, so the binary may
- *     simply be absent in the snap. It would now surface as a
- *     `spawn_error` record rather than as silence.
- *   - Whether the portal route actually satisfies AppArmor.
+ * ORAIN-0615 (resolved 2026-07-28) — the ORAIN-0590 premise is now
+ * verified end-to-end on real hardware. Inside the snap, libsecret talks
+ * to the Secret portal (`org.freedesktop.portal.Secret`), never to
+ * `org.freedesktop.secrets` directly, so `password-manager-service` is
+ * irrelevant (connecting it changes nothing — tested). The binary is
+ * staged and runs. Whether sessions persist depends on the HOST portal
+ * having a working Secret backend:
+ *   - Ubuntu 26.04: portal works; secrets live in the portal file
+ *     backend under the snap's user data, not the host keyring.
+ *   - Zorin OS 18: the portal request fails (Response code 2), which
+ *     libsecret surfaces as exit 1 + `user interaction failed` — the
+ *     reason `isGenuineNotFound()` must not treat every exit 1 as a
+ *     cache miss. No AppArmor denials; a portals.conf override does not
+ *     help. On such hosts the selector falls back honestly and the app
+ *     shows the no-persistence banner; the `.deb` is the supported
+ *     alternative (see docs/INSTALLATION.md).
  *
  * Security properties:
  *   - The secret travels over stdin, NEVER as argv. argv is world-readable
