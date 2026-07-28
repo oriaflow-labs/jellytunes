@@ -7,7 +7,7 @@ Installing JellyTunes on Linux used to mean downloading an AppImage and hoping y
 **Install from the Snap Store.** One command, and updates arrive on their own from then on:
 
 ```
-snap install jellytunes --beta
+sudo snap install jellytunes
 ```
 
 **The `.deb` works on Ubuntu 24.04.** It shipped without an AppArmor profile, which meant the app refused to launch on 24.04 and left you staring at a sandbox error. The profile is now included and enabled, and the package metadata is complete.
@@ -27,10 +27,10 @@ snap install jellytunes --beta
 **Snap (recommended).** The `.snap` isn't attached to this release on purpose. Install it from the Store instead, since a manually downloaded file won't carry the Store's signature:
 
 ```
-snap install jellytunes --beta
+sudo snap install jellytunes
 ```
 
-Sync to USB and SD cards needs a couple of Snap interfaces connected. Most systems handle this automatically; if yours doesn't, JellyTunes tells you which one is missing and the exact command to run.
+Syncing to USB and SD cards needs the `removable-media` interface. Most systems connect it automatically; if yours doesn't, JellyTunes tells you and gives you the command.
 
 **`.deb`.** Download it from the assets below.
 
