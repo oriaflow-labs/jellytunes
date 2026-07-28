@@ -400,7 +400,7 @@ class SyncApiImpl implements SyncApi {
     const startTime = Date.now();
     this.logger?.debug(`[BATCH] getGenreTracks START genreId=${genreId}`);
 
-    const endpoint = `/Items?UserId=${this.userId}&IncludeItemTypes=Audio&GenreIds=${encodeURIComponent(genreId)}&Recursive=true&Fields=${TRACK_FIELDS}`;
+    const endpoint = `/Items?userId=${this.userId}&IncludeItemTypes=Audio&GenreIds=${encodeURIComponent(genreId)}&Recursive=true&Fields=${TRACK_FIELDS}`;
     const data = await this.request<{ Items: JellyfinTrackItem[] }>(endpoint);
 
     const items = (data.Items ?? []).filter((item) => item.MediaSources?.[0]?.Path);

@@ -653,7 +653,7 @@ describe('sync-api', () => {
       await api.getGenreTracks('genre-jazz');
 
       expect(capturedUrl).toContain('/Items?');
-      expect(capturedUrl).toContain('UserId=user-1');
+      expect(capturedUrl).toContain('userId=user-1');
       expect(capturedUrl).toContain('GenreIds=genre-jazz');
       expect(capturedUrl).toContain('IncludeItemTypes=Audio');
       expect(capturedUrl).toContain('Recursive=true');
