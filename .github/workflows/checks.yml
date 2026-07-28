@@ -36,6 +36,15 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: pip install setuptools
 
+      - name: Cache usb-detection native build (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules/.pnpm/usb-detection@*/node_modules/usb-detection/build
+          key: usb-detection-build-windows-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            usb-detection-build-windows-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
