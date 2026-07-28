@@ -633,7 +633,7 @@ describe('sync-api', () => {
       expect(tracks[1].id).toBe('t2');
     });
 
-    it('queries /Items with GenreIds and IncludeItemTypes=Audio (ORAIN-0535)', async () => {
+    it('queries /Items with user-scoped genre filters (ORAIN-0535, ORAIN-0546)', async () => {
       let capturedUrl = '';
       const mockFetch = vi.fn().mockImplementation((url: string) => {
         capturedUrl = url;
@@ -653,6 +653,7 @@ describe('sync-api', () => {
       await api.getGenreTracks('genre-jazz');
 
       expect(capturedUrl).toContain('/Items?');
+      expect(capturedUrl).toContain('UserId=user-1');
       expect(capturedUrl).toContain('GenreIds=genre-jazz');
       expect(capturedUrl).toContain('IncludeItemTypes=Audio');
       expect(capturedUrl).toContain('Recursive=true');
