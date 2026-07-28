@@ -11,6 +11,12 @@
  * The log record NEVER includes the stdout of a `lookup` call — that
  * channel carries the plaintext session in memory.
  *
+ * ORAIN-0615 (regression fix): the lazy-result guard below used to demand
+ * a prior `write()` for EVERY operation. Only `store` calls `write()`, so
+ * `lookup`, `clear` and `isAvailable` threw before spawning — see the
+ * header of `secret-store.ts` for the full failure chain. The guard is now
+ * scoped to the operations that actually consume stdin.
+ *
  * Design notes:
  *   - The runner contract gives the store layer a `handle` whose `write`
  *     method pipes the secret into the child's stdin BEFORE the result is
@@ -18,7 +24,9 @@
  *     deferred until the store first reads `handle.result`, by which time
  *     it has already called `handle.write(secret)`. Without this, spawnSync
  *     would receive an empty stdin buffer, the child would see EOF, and
- *     `secret-tool store` would never record the secret.
+ *     `secret-tool store` would never record the secret. That hazard is
+ *     specific to `store`; the read-only operations take their input from
+ *     argv, which is why the guard distinguishes them (`STDIN_FREE_OPERATIONS`).
  *   - We use `child_process.spawnSync` for predictability under the snap
  *     sandbox; `spawn` would require us to manage the lifecycle ourselves
  *     and there is no parallelism benefit here (session save/load is a
@@ -75,6 +83,21 @@ const PARENT_ENV_RECORD_CAP = 600;
 
 /** Keys we capture from the parent process env for the diagnostic record. */
 const DIAGNOSTIC_ENV_KEYS = ['PATH', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR'] as const;
+
+/** Operations the diagnostic log knows how to label. */
+const KNOWN_OPERATIONS = new Set(['store', 'lookup', 'clear', 'isAvailable']);
+
+/**
+ * Operations whose subprocess takes ALL of its input from argv and never
+ * reads stdin, so spawning them without a prior `write()` is correct.
+ *
+ * `store` is deliberately absent: it consumes the secret from stdin, and
+ * spawning it with an empty buffer would overwrite a good keyring entry
+ * with an empty one. An operation we cannot label (`unknown`) is absent
+ * too — an unrecognised caller gets the conservative behaviour.
+ * (ORAIN-0615 AC1.)
+ */
+const STDIN_FREE_OPERATIONS = new Set(['lookup', 'clear', 'isAvailable']);
 
 export interface AdapterOptions {
   /** Override the binary path (defaults to `secret-tool` from PATH). */
@@ -260,6 +283,24 @@ export function createSecretToolRunner(options: AdapterOptions = {}): SecretTool
     let stdinPayload = '';
     let stdinFlushed = false;
 
+    // ORAIN-0601 (review): the boot-time availability probe
+    // (`secretStore.isAvailable()`) executes `lookup` underneath — but for
+    // AC1's diagnostic value we MUST keep those distinct from a real session
+    // restore, otherwise the log cannot tell a first-launch banner from a
+    // session-restore failure. The store layer tags the probe with
+    // `operationHint: 'isAvailable'`; we honour that before falling back to
+    // args[0].
+    //
+    // ORAIN-0615: resolved here, at handle construction, rather than inside
+    // the `result` getter — the write-before-read guard below needs to know
+    // which operation this is, and the answer never depends on the spawn.
+    const operation: string =
+      typeof operationHint === 'string' && KNOWN_OPERATIONS.has(operationHint)
+        ? operationHint
+        : KNOWN_OPERATIONS.has(args[0] ?? '')
+          ? (args[0] as string)
+          : 'unknown';
+
     const handle: SecretToolHandle = {
       write: (chunk) => {
         // Capture exactly one chunk. Multiple writes would change the
@@ -270,10 +311,23 @@ export function createSecretToolRunner(options: AdapterOptions = {}): SecretTool
         }
       },
       get result(): SecretToolResult {
-        if (!stdinFlushed) {
-          // Defence-in-depth: protect any future caller that reads `result`
-          // before `write`. We don't want to spawn with an empty buffer
-          // because that is the exact bug this module exists to avoid.
+        // ORAIN-0615 AC1: the guard is per-operation, not global.
+        //
+        // `store` is the only operation whose subprocess READS stdin, so it
+        // is the only one for which spawning before `write()` is a bug: a
+        // `secret-tool store` with an empty stdin buffer would silently
+        // overwrite a good session entry with an empty one. Keep throwing
+        // there — that is defence-in-depth against a future caller, and it
+        // is why this guard was written in the first place.
+        //
+        // `lookup`, `clear` and `isAvailable` take everything from argv and
+        // never read stdin. Requiring `write()` from them was the regression:
+        // `secret-store` legitimately calls none, so every one of those paths
+        // threw before reaching `exec`, `isAvailable()` swallowed it in its
+        // `catch` and returned false, and the "sessions will not persist"
+        // banner appeared on every Linux launch — with zero spawns and zero
+        // log lines to explain it.
+        if (!stdinFlushed && !STDIN_FREE_OPERATIONS.has(operation)) {
           throw new Error('secret-tool handle: read result before write(secret)');
         }
         const child = exec(bin, [...args], {
@@ -287,21 +341,6 @@ export function createSecretToolRunner(options: AdapterOptions = {}): SecretTool
         // channel carries the plaintext session, and we never want a log
         // dump to leak the secret.
         //
-        // ORAIN-0601 (review): the boot-time availability probe
-        // (`secretStore.isAvailable()`) executes `lookup` underneath — but
-        // for AC1's diagnostic value we MUST keep those distinct from a real
-        // session restore, otherwise the log cannot tell a first-launch
-        // banner from a session-restore failure. The store layer tags the
-        // probe with `operationHint: 'isAvailable'`; we honour that before
-        // falling back to args[0].
-        const KNOWN_OPERATIONS = new Set(['store', 'lookup', 'clear', 'isAvailable']);
-        const operation =
-          typeof operationHint === 'string' && KNOWN_OPERATIONS.has(operationHint)
-            ? operationHint
-            : KNOWN_OPERATIONS.has(args[0] ?? '')
-              ? (args[0] as 'store' | 'lookup' | 'clear' | 'isAvailable')
-              : 'unknown';
-
         if (child.error) {
           // spawn ENOENT, EACCES, etc. The Node child object ONLY carries
           // the error message — there is no separate stderr channel here.

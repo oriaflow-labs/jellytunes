@@ -28,7 +28,9 @@ sudo snap connect jellytunes:removable-media
 sudo snap connect jellytunes:hardware-observe
 ```
 
-Session encryption is handled via `secret-tool` (libsecret routed through the Secret portal, which works under strict confinement without any plug). No `password-manager-service` connection is needed.
+Session encryption is attempted via `secret-tool` (the libsecret CLI), with Electron's `safeStorage` as the fallback. No `password-manager-service` connection is needed.
+
+> **Known issue — session persistence under Snap.** Whether `secret-tool` actually reaches the keyring inside strict confinement has not yet been confirmed on a clean install. Two things are unresolved: the snap does not currently stage `libsecret-tools`, so the `secret-tool` binary may be absent altogether, and the portal-routing behaviour under AppArmor is unverified. If you see "sessions will not persist", or you are asked to log in again after every restart, that is this issue. The `.deb` package is unaffected. Diagnostics land in the app log (`~/snap/jellytunes/current/.config/JellyTunes/logs/`) as `secret-tool` records carrying an `operation` and a `stderrClassification`.
 
 The Snap Store manages application refreshes automatically. The app's manual release-update banner is therefore not used by the Snap build.
 

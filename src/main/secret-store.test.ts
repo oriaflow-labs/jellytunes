@@ -25,6 +25,7 @@ import {
   type SecretToolHandle,
   type SecretToolRunner,
 } from './secret-store';
+import type { Logger } from './logger-types';
 
 function makeHandle(result: SecretToolHandle['result'], captured: string[] = []): SecretToolHandle {
   return {
@@ -300,6 +301,83 @@ describe('createSecretStore', () => {
         expect(args).toContain('service');
         expect(args).toContain('jellytunes');
       }
+    });
+  });
+
+  describe('isAvailable() diagnostics (ORAIN-0615 AC3)', () => {
+    interface Captured {
+      level: string;
+      message: string;
+      context?: unknown;
+    }
+
+    function makeCapturingLogger(): { logger: Logger; records: Captured[] } {
+      const records: Captured[] = [];
+      const at =
+        (level: string) =>
+        (message: string, context?: unknown): void => {
+          records.push({ level, message, context });
+        };
+      return {
+        logger: { error: at('error'), warn: at('warn'), info: at('info'), debug: at('debug') },
+        records,
+      };
+    }
+
+    it('emits exactly one record when the runner throws, then returns false', async () => {
+      const { logger, records } = makeCapturingLogger();
+      const runner: SecretToolRunner = () => {
+        throw new Error('secret-tool handle: read result before write(secret)');
+      };
+      const store = createSecretStore({ runner, logger });
+
+      await expect(store.isAvailable()).resolves.toBe(false);
+
+      expect(records).toHaveLength(1);
+      expect(records[0].level).toBe('error');
+      expect(records[0].context).toMatchObject({ operation: 'isAvailable' });
+    });
+
+    it('truncates the error message at the 200-char cap', async () => {
+      const { logger, records } = makeCapturingLogger();
+      const runner: SecretToolRunner = () => {
+        throw new Error('E'.repeat(500));
+      };
+      const store = createSecretStore({ runner, logger });
+
+      await store.isAvailable();
+
+      const ctx = records[0].context as { errorMessage: string };
+      expect(ctx.errorMessage.length).toBeLessThanOrEqual(200);
+      expect(ctx.errorMessage).toMatch(/truncated/);
+    });
+
+    it('never records the secret returned by the underlying lookup', async () => {
+      const { logger, records } = makeCapturingLogger();
+      const runner: SecretToolRunner = () => ({
+        write: () => {},
+        get result(): SecretToolHandle['result'] {
+          // A throw AFTER the plaintext is in hand — the worst case for a
+          // logger that reaches for whatever context is nearby.
+          const err = new Error('boom') as Error & { stdout?: string };
+          err.stdout = 'TOP-SECRET-SESSION';
+          throw err;
+        },
+      });
+      const store = createSecretStore({ runner, logger });
+
+      await store.isAvailable();
+
+      expect(JSON.stringify(records)).not.toContain('TOP-SECRET-SESSION');
+    });
+
+    it('stays silent and returns true on the normal reachable path', async () => {
+      const { logger, records } = makeCapturingLogger();
+      const runner = vi.fn<SecretToolRunner>().mockReturnValue(makeHandle(ok()));
+      const store = createSecretStore({ runner, logger });
+
+      await expect(store.isAvailable()).resolves.toBe(true);
+      expect(records).toHaveLength(0);
     });
   });
 });

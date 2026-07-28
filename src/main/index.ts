@@ -711,8 +711,11 @@ export async function initSecureStorageProvider(): Promise<StorageProvider | nul
   // ORAIN-0601 AC1: wire the structured logger so every secret-tool
   // failure is recorded (status, stderr classification, parent env)
   // without ever logging the plaintext session from a lookup stdout.
-  const secretRunner = createSecretToolRunner({ logger: createElectronLogger() });
-  const secretStore = createSecretStore({ runner: secretRunner });
+  // ORAIN-0615 AC3: the store gets the logger too, so the `isAvailable()`
+  // catch can no longer swallow a failure without leaving a trace.
+  const storageLogger = createElectronLogger();
+  const secretRunner = createSecretToolRunner({ logger: storageLogger });
+  const secretStore = createSecretStore({ runner: secretRunner, logger: storageLogger });
   // Resolve the probe exactly once at startup. The selector is sync, so we
   // wait here and feed the boolean in as `secretToolAvailable` — no
   // mutation of the wrapper, no Object.assign duck-typed patch.

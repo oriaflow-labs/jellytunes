@@ -272,3 +272,78 @@ describe('createSecretToolRunner (ORAIN-0601 AC1: structured logging)', () => {
     }
   });
 });
+
+describe('write-before-read guard is per-operation (ORAIN-0615 AC1)', () => {
+  /** Records every spawn so we can assert whether the subprocess ran at all. */
+  function makeSpyingRunner(): {
+    runner: ReturnType<typeof createSecretToolRunner>;
+    calls: string[][];
+  } {
+    const calls: string[][] = [];
+    const runner = createSecretToolRunner({
+      logger: makeCapturingLogger().logger,
+      env: { PATH: '/usr/bin:/bin' },
+      spawn: (_bin, args) => {
+        calls.push([...args]);
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+    return { runner, calls };
+  }
+
+  // --- the operations that must now spawn without a prior write() ---
+
+  it.each([
+    ['lookup', ['lookup', 'service', 'jellytunes'], undefined],
+    ['clear', ['clear', 'service', 'jellytunes'], undefined],
+    ['isAvailable', ['lookup', 'service', 'jellytunes'], 'isAvailable'],
+  ])('%s spawns without write() having been called', (_label, args, hint) => {
+    const { runner, calls } = makeSpyingRunner();
+
+    const handle = runner(hint ? { args, operationHint: hint } : { args });
+    // No handle.write(...) — this is the whole point.
+    const result = handle.result;
+
+    expect(result.status).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(args);
+  });
+
+  // --- the operation that must keep throwing ---
+
+  it('store still throws when result is read before write()', () => {
+    const { runner, calls } = makeSpyingRunner();
+
+    const handle = runner({
+      args: ['store', '--label=jellytunes-session', 'service', 'jellytunes'],
+      operationHint: 'store',
+    });
+
+    expect(() => handle.result).toThrow(/read result before write/);
+    // Critical: the guard must fire BEFORE the spawn. A `secret-tool store`
+    // with an empty stdin would overwrite the good entry with an empty one.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('store still spawns normally once write() has been called', () => {
+    const { runner, calls } = makeSpyingRunner();
+
+    const handle = runner({
+      args: ['store', '--label=jellytunes-session', 'service', 'jellytunes'],
+      operationHint: 'store',
+    });
+    handle.write('the-secret');
+
+    expect(handle.result.status).toBe(0);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('an unlabelled operation gets the conservative behaviour and throws', () => {
+    const { runner, calls } = makeSpyingRunner();
+
+    const handle = runner({ args: ['something-else', 'service', 'jellytunes'] });
+
+    expect(() => handle.result).toThrow(/read result before write/);
+    expect(calls).toHaveLength(0);
+  });
+});

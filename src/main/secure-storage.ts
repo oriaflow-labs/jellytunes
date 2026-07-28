@@ -5,10 +5,18 @@
  * with a small provider interface. Two providers exist, both exposing
  * `encrypt`/`decrypt` over `Buffer`:
  *
- *   - **secret-tool** (preferred on Linux). libsecret CLI, routed through
- *     the Secret portal inside the Snap strict confinement — the path
- *     that AppArmor allows. Does not require the `password-manager-service`
- *     plug; that interface is removed from the snap entirely.
+ *   - **secret-tool** (preferred on Linux). libsecret CLI. The design
+ *     intent is that libsecret detects the sandbox and routes through the
+ *     Secret portal, which AppArmor permits without the
+ *     `password-manager-service` plug (that interface is removed from the
+ *     snap entirely).
+ *
+ *     ORAIN-0615 — STATUS: UNVERIFIED under real Snap confinement. Until
+ *     ORAIN-0601 this selector never even reached a subprocess: the adapter
+ *     threw on `isAvailable()` before spawning, so the probe returned false
+ *     on EVERY Linux install and this branch was dead code. That bug is
+ *     fixed, but "the portal path works" remains an untested claim — see
+ *     the header of `secret-store.ts`. Do not restate it as fact here.
  *
  *   - **safeStorage** (everywhere else, plus Linux fallback). Electron's
  *     built-in, backed by macOS Keychain / Windows DPAPI / libsecret

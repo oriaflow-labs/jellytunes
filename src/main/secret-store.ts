@@ -4,9 +4,30 @@
  * ORAIN-0590: replace `safeStorage` (broken under Snap strict confinement
  * — Electron's OSCrypt calls `org.freedesktop.Secret.Service.ReadAlias`
  * directly against gnome-keyring and AppArmor cuts it off) with
- * `secret-tool`, whose libsecret client detects the sandbox and routes
- * through the Secret portal. This gives us OS-backed encrypted session
- * storage inside the snap with no `password-manager-service` plug.
+ * `secret-tool`. The premise is that libsecret's client detects the
+ * sandbox and routes through the Secret portal, giving us OS-backed
+ * session storage with no `password-manager-service` plug.
+ *
+ * ORAIN-0615 — WHAT IS AND IS NOT VERIFIED. That premise has never been
+ * exercised end-to-end. `SecretToolHandle.result` is a lazy getter in the
+ * production adapter, and it used to throw unless `write()` had been
+ * called first — which only `store()` does. So `lookup()`, `clear()` and
+ * `isAvailable()` threw before spawning anything; `isAvailable()` caught
+ * it, returned false, the selector fell through, and users saw "sessions
+ * will not persist" from first launch on every Linux install, snap or
+ * not. Zero subprocesses ran, so zero diagnostics existed.
+ *
+ * Fixed here + in the adapter (the guard is now per-operation), and
+ * pinned by `secret-store.seam.test.ts`, which drives the REAL store
+ * through the REAL adapter and mocks only `spawnSync` — the older suites
+ * mocked both sides of this contract and so could not see the bug.
+ *
+ * Still open, and NOT to be described as working until confirmed on a
+ * clean VM install:
+ *   - `package.json` does not stage `libsecret-tools`, so the binary may
+ *     simply be absent in the snap. It would now surface as a
+ *     `spawn_error` record rather than as silence.
+ *   - Whether the portal route actually satisfies AppArmor.
  *
  * Security properties:
  *   - The secret travels over stdin, NEVER as argv. argv is world-readable
@@ -24,6 +45,32 @@
  * stdin. The runner is responsible for closing stdin before returning so
  * secret-tool sees EOF and flushes its read.
  */
+
+import type { Logger } from './logger-types';
+
+/** Silent default so callers that don't inject a logger keep working. */
+const NOOP_LOGGER: Logger = {
+  error: () => {},
+  warn: () => {},
+  info: () => {},
+  debug: () => {},
+};
+
+/**
+ * Hard cap on the error message surfaced by the `isAvailable()` catch.
+ * Mirrors `STDERR_LOG_CAP` in `secret-tool.adapter.ts` — duplicated rather
+ * than imported because the adapter imports its types from THIS module, and
+ * importing back would close a cycle.
+ */
+const ERROR_MESSAGE_LOG_CAP = 200;
+
+const TRUNCATE_MARKER = '…[truncated]';
+
+/** Cap total length at `cap`, marking the value as shortened. */
+function truncate(value: string, cap: number): string {
+  if (value.length <= cap) return value;
+  return `${value.slice(0, Math.max(0, cap - TRUNCATE_MARKER.length))}${TRUNCATE_MARKER}`;
+}
 
 export interface SecretToolResult {
   /** Exit code. `null` when the process could not be spawned or was killed (timeout). */
@@ -79,6 +126,16 @@ export interface SecretStoreOptions {
    * to mean "timed out".
    */
   timeoutMs?: number;
+  /**
+   * Structured logger (ORAIN-0615 AC3). `isAvailable()` deliberately
+   * swallows every throw so a broken keyring cannot crash app boot — but
+   * a silent `catch` is exactly what made ORAIN-0601 unfalsifiable from a
+   * log. With a logger wired, the swallow leaves a trace.
+   *
+   * Optional so existing callers and test fixtures keep working; defaults
+   * to a no-op.
+   */
+  logger?: Logger;
 }
 
 export interface SecretStore {
@@ -136,6 +193,7 @@ function assertSecretFits(secret: string): void {
 
 export function createSecretStore(options: SecretStoreOptions): SecretStore {
   const { runner } = options;
+  const logger: Logger = options.logger ?? NOOP_LOGGER;
 
   return {
     async store(secret: string): Promise<void> {
@@ -191,8 +249,24 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
         const handle = runner({ args: ['lookup', ...ATTRS], operationHint: 'isAvailable' });
         const result = readResult(handle);
         return keyringReachable(result.status);
-      } catch {
-        // spawn ENOENT, EACCES, etc. — binary not on PATH.
+      } catch (e: unknown) {
+        // ORAIN-0615 AC3: this `catch` is why the ORAIN-0601 regression was
+        // invisible. The adapter threw before spawning, this swallowed the
+        // throw, `false` propagated to the selector, and the user saw only
+        // "sessions will not persist" — no spawn, no log, nothing to grep.
+        //
+        // Note the adapter already reports spawn failures itself (they come
+        // back as `status: null`, not as throws), so after the AC1 fix this
+        // branch should be effectively unreachable. That is precisely why it
+        // must not be silent: if it ever fires again, it is a defect in the
+        // seam and we need to see it.
+        //
+        // We log the message only — truncated, never the stdout of the
+        // underlying `lookup`, which carries the plaintext session.
+        logger.error('secret-tool isAvailable probe threw', {
+          operation: 'isAvailable',
+          errorMessage: truncate(e instanceof Error ? e.message : String(e), ERROR_MESSAGE_LOG_CAP),
+        });
         return false;
       }
     },
