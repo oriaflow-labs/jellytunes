@@ -7,7 +7,11 @@
 //
 // We define this in its own module — not inside secret-tool.adapter —
 // so multiple instrumented modules can depend on the same interface
-// without circular imports through the central logger.
+// without circular imports through the central logger. Instrumented
+// modules import only the `Logger` type; the electron-log-backed factory
+// below is wired once from `src/main/index.ts`.
+
+import { log } from './logger';
 
 export interface Logger {
   error(message: string, context?: unknown): void;
@@ -18,15 +22,24 @@ export interface Logger {
 
 /**
  * Build a Logger backed by electron-log. Provided here (rather than
- * re-exported from ./logger) so the secret-tool adapter can stay
- * independent of the main process boot order — it imports the factory
- * lazily and never references `console` directly.
+ * re-exported from ./logger) so instrumented modules depend only on the
+ * narrow `Logger` interface and never reference `console` directly.
+ *
+ * Boot order: `src/main/index.ts` imports `./logger` and runs
+ * `configureLogger()` eagerly (lines 137-138) before the only production
+ * call site of this factory, so the transports are already configured by
+ * the time a logger is built here.
  */
 export function createElectronLogger(): Logger {
-  // Lazy require: keep the production adapter free of module-load side
-  // effects from electron-log's file transport until a call is made.
-  // Tests pass a different logger; production callers wire this in
-  // once `configureLogger()` has run.
+  // Static import of `./logger` (ORAIN-0614). This used to be a runtime
+  // `require('./logger')`, justified as "lazy" to defer electron-log's
+  // file-transport side effects. That justification never held — index.ts
+  // already imports and configures the logger eagerly at boot — and the
+  // dynamic require broke packaged builds: electron-vite bundles the main
+  // process into a single `dist/main/index.js` via Rollup, which rewrites
+  // static imports but leaves `require()` calls untouched, so
+  // `dist/main/logger.js` did not exist and the call threw
+  // `Cannot find module './logger'`, aborting secure-storage init.
   //
   // We adapt electron-log's `log` to the `Logger` interface rather than
   // re-declaring the four method signatures inline — the wrapper holds
@@ -36,7 +49,7 @@ export function createElectronLogger(): Logger {
   // because electron-log's signatures are `(...params: any[]): void`
   // while `Logger` expects `(message: string, context?: unknown): void`;
   // the wrapper below dispatches in the shape we actually call.
-  const electronLog = require('./logger').log as unknown as Record<
+  const electronLog = log as unknown as Record<
     'error' | 'warn' | 'info' | 'debug',
     (msg: string, ctx?: unknown) => void
   >;
