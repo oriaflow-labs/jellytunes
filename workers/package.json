@@ -5,11 +5,13 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",
     "typescript": "^5.0.0",
-    "wrangler": "^3.0.0"
+    "wrangler": "^3.0.0",
+    "vitest": "^2.1.8"
   }
 }

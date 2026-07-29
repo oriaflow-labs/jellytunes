@@ -31,6 +31,8 @@ export default tseslint.config(
       // Ignore test setup files (conditional code is intentional)
       '**/__tests__/setup.ts',
       '**/__tests__/**/setup.ts',
+      // Worker has its own tsconfig and lint context — see workers/package.json
+      'workers/**',
     ],
   },
 

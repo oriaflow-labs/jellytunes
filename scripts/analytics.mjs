@@ -49,6 +49,14 @@ ${bold}EXAMPLES${reset}
 
 ${bold}ENV${reset}
   CLOUDFLARE_STATS_API_KEY  Your Cloudflare STATS_API_KEY
+  SNAPCRAFT_METRICS_AUTH    Snapcraft dashboard Authorization header
+                           (POST https://dashboard.snapcraft.io/dev/api/snaps/metrics).
+                           ACL must be package_metrics. The env var stores the
+                           header string already bound via prepare_for_request —
+                           NOT the raw export-login blob. Regenerate with the
+                           pymacaroons binding step documented in ORAIN-0625
+                           when the discharge expires; export-login alone is
+                           not enough. When unset, snap sections are skipped.
 
 ${bold}CHART TYPES${reset}
   ascii    Default, works everywhere
@@ -162,6 +170,197 @@ function aggregateByDateVersion(data) {
   return agg;
 }
 
+// Aggregators are exported so AC 4 can be unit-tested: a KV key like
+// "2026-07-29:0.6.0:linux-snap:ES" must still split on ':' by index and
+// yield {date: '2026-07-29'}, {version: '0.6.0'}, {platform: 'linux-snap'},
+// {country: 'ES'} — the snap marker folding into the platform field keeps
+// the existing 4-segment key shape intact.
+export const _aggregators = {
+  aggregateByDate,
+  aggregateByVersion,
+  aggregateByPlatform,
+  aggregateByCountry,
+  aggregateByDateVersion,
+};
+
+// ─── Snap Store metrics (exported for unit tests) ───────────────────────────
+
+export const SNAP_METRICS_ENDPOINT = 'https://dashboard.snapcraft.io/dev/api/snaps/metrics';
+// Verified 2026-07-29 from `snapcraft metrics jellytunes` and dashboard.snapcraft.io
+export const SNAP_METRICS_SNAP_ID = 'xW8t5nYJls85ii9a6t1pYjMnOE8sHYGp';
+export const SNAP_MAX_DAYS = 365;
+export const SNAP_METRICS = [
+  'installed_base_by_version',
+  'installed_base_by_country',
+  'installed_base_by_channel',
+  'weekly_device_change',
+];
+
+// Build the POST body for a single snapcraft metrics query.
+export function buildMetricsRequestBody(metricName, start, end) {
+  return {
+    filters: [
+      { snap_id: SNAP_METRICS_SNAP_ID, metric_name: metricName, start, end },
+    ],
+  };
+}
+
+// Parse a raw snapcraft `/dev/api/snaps/metrics` response for one metric name.
+// Returns { status, buckets, series, error }.
+export function parseSnapMetricsResponse(payload, metricName) {
+  const metric = payload?.metrics?.find((m) => m.metric_name === metricName);
+  if (!metric) {
+    return { status: 'FAIL', buckets: [], series: [], error: `metric ${metricName} missing` };
+  }
+  return {
+    status: metric.status,
+    buckets: metric.buckets ?? [],
+    series: metric.series ?? [],
+    error: metric.error,
+  };
+}
+
+// Format weekly_device_change entries in the explicit order
+// new → continued → lost, regardless of API ordering.
+export function formatWeeklyDeviceChange(buckets, series) {
+  const latestIdx = buckets.length - 1;
+  const valueOf = (name) => {
+    const s = series.find((x) => x.name === name);
+    return s ? (s.values[latestIdx] ?? 0) : 0;
+  };
+  return [
+    ['new', valueOf('new')],
+    ['continued', valueOf('continued')],
+    ['lost', valueOf('lost')],
+  ];
+}
+
+// Clamp --days to the API max and signal whether clipping happened.
+export function clampDaysToOneYear(days) {
+  if (days > SNAP_MAX_DAYS) return { days: SNAP_MAX_DAYS, clipped: true };
+  return { days, clipped: false };
+}
+
+// Actionable message for 401/403: the env var holds the *header*, not the
+// raw credential, so plain `snapcraft export-login` is not enough —
+// the binding step (prepare_for_request) must be re-run.
+export function snapAuthErrorMessage(status) {
+  return (
+    `Snapcraft API returned ${status}: SNAPCRAFT_METRICS_AUTH is invalid or expired. ` +
+    `The env var stores the prepared Authorization header, not the raw export-login blob. ` +
+    `Regenerate the full header (re-run snapcraft export-login + the prepare_for_request binding ` +
+    `documented in ORAIN-0625) and update the secret.`
+  );
+}
+
+// Fetch one metric from the snapcraft dashboard API.
+// Returns the raw `metrics[0]` element. Throws on non-OK HTTP.
+export async function fetchSnapMetric(metricName, { from, to }) {
+  const auth = process.env.SNAPCRAFT_METRICS_AUTH;
+  if (!auth) {
+    throw new Error('SNAPCRAFT_METRICS_AUTH not set');
+  }
+  const res = await fetch(SNAP_METRICS_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: auth,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(buildMetricsRequestBody(metricName, from, to)),
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(snapAuthErrorMessage(res.status));
+  }
+  if (!res.ok) {
+    throw new Error(`Snapcraft API error ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+// ─── Snap Store formatters ──────────────────────────────────────────────────
+
+function printSnapSection(label, metricName, payload, { from, to }) {
+  const parsed = parseSnapMetricsResponse(payload, metricName);
+  const header = `Snap Store ${label}`;
+
+  // NO_DATA / FAIL / empty — render a single short block with the same header
+  // prefix so the AC 6 contract (4 sections, all starting with "Snap Store")
+  // holds regardless of API state.
+  if (parsed.status === 'NO_DATA') {
+    section2(header, [], { note: `No data available in window ${from} → ${to}.` });
+    return;
+  }
+  if (parsed.status === 'FAIL') {
+    section2(header, [], { note: `Snapcraft returned FAIL${parsed.error ? `: ${parsed.error}` : ''}` });
+    return;
+  }
+  if (!parsed.buckets.length || !parsed.series.length) {
+    section2(header, [], { note: `Snapcraft returned no buckets/series for ${from} → ${to}.` });
+    return;
+  }
+
+  let entries;
+  let note = `📅  ${from} → ${to}`;
+  if (metricName === 'weekly_device_change') {
+    entries = formatWeeklyDeviceChange(parsed.buckets, parsed.series);
+    note =
+      `📅  ${from} → ${to} (latest bucket: ${parsed.buckets[parsed.buckets.length - 1]})  ·  ` +
+      `ordered new → continued → lost. Shows 100% "new" until ≥ 2 weekly windows have elapsed.`;
+  } else {
+    const latestIdx = parsed.buckets.length - 1;
+    entries = parsed.series.map((s) => [s.name, s.values[latestIdx] ?? 0]);
+    entries.sort((a, b) => b[1] - a[1]);
+  }
+  section2(header, entries, { note });
+}
+
+// Variant of `section` that renders unconditionally (no TOTAL row) to match
+// the layout of the existing dashboard sections, tolerant of empty input.
+function section2(label, entries, { width = 38, note } = {}) {
+  console.log(`\n  ${cyan}${bold}📦 ${label}${reset}`);
+  console.log(`  ${dim}${'─'.repeat(width + 16)}${reset}`);
+  if (note) console.log(`  ${dim}${note}${reset}`);
+  if (!entries.length) {
+    console.log(`  ${dim}(no data — section intentionally left empty)${reset}`);
+    return;
+  }
+  // Avoid Math.max() over [] → -Infinity.
+  const max = entries.reduce((m, [, v]) => (v > m ? v : m), 0);
+  for (const [key, value] of entries) {
+    const filled = max > 0 ? Math.round((value / max) * width) : 0;
+    const block = `${cyan}${'█'.repeat(filled)}${reset}`;
+    const empty = `${dim}${'░'.repeat(width - filled)}${reset}`;
+    const num = `${green}${String(value).padStart(5)}${reset}`;
+    const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+    const pctStr = `${dim}${String(pct).padStart(4)}%${reset}`;
+    console.log(`  ${String(key).padEnd(12)} ${block}${empty} ${num} ${pctStr}`);
+  }
+}
+
+// Fetch all four snap metrics in parallel. Returns { ok, data, error } where
+// data is keyed by metric_name on success. Never throws.
+async function fetchAllSnapMetrics({ from, to }) {
+  if (!process.env.SNAPCRAFT_METRICS_AUTH) {
+    return { ok: false, reason: 'missing-env' };
+  }
+  const results = await Promise.allSettled(
+    SNAP_METRICS.map((m) => fetchSnapMetric(m, { from, to })),
+  );
+  const data = {};
+  let errored = false;
+  SNAP_METRICS.forEach((m, i) => {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      data[m] = r.value;
+    } else {
+      errored = true;
+      data[m] = { error: r.reason?.message ?? String(r.reason) };
+    }
+  });
+  return { ok: !errored, data };
+}
+
 // ─── Formatters ─────────────────────────────────────────────────────────────
 
 function bar(value, total, width = 38) {
@@ -201,7 +400,7 @@ function section(label, entries, width = 38) {
   console.log(`  ${bold}${String('TOTAL').padEnd(12)} ${block}${empty} ${num} ${dim}100%${reset}`);
 }
 
-function printDashboard(cfData, githubData, { from, to }) {
+function printDashboard(cfData, githubData, snapResult, { from, to }) {
   const byDate = aggregateByDate(cfData);
   const byVersion = aggregateByVersion(cfData);
   const byPlatform = aggregateByPlatform(cfData);
@@ -270,6 +469,22 @@ function printDashboard(cfData, githubData, { from, to }) {
     }
   }
 
+  // ── Snap Store (installed base + weekly device change) ──
+  if (snapResult?.ok && snapResult.data) {
+    printSnapSection('Snap Store Installed Base by Version', 'installed_base_by_version', snapResult.data.installed_base_by_version, { from, to });
+    printSnapSection('Snap Store Installed Base by Country', 'installed_base_by_country', snapResult.data.installed_base_by_country, { from, to });
+    printSnapSection('Snap Store Installed Base by Channel', 'installed_base_by_channel', snapResult.data.installed_base_by_channel, { from, to });
+    printSnapSection('Snap Store Weekly Device Change', 'weekly_device_change', snapResult.data.weekly_device_change, { from, to });
+  } else if (snapResult?.reason === 'missing-env') {
+    console.log(`\n  ${dim}📦 Snap Store sections skipped: SNAPCRAFT_METRICS_AUTH not set. See --help for setup.${reset}`);
+  } else if (snapResult && !snapResult.ok) {
+    console.log(`\n  ${red}📦 Snap Store sections failed:${reset}`);
+    for (const m of SNAP_METRICS) {
+      const e = snapResult.data?.[m]?.error;
+      if (e) console.log(`  ${dim}- ${m}:${reset} ${e}`);
+    }
+  }
+
   console.log(`\n${magenta}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${reset}\n`);
 }
 
@@ -331,8 +546,18 @@ async function printChartli(cfData, type = 'ascii') {
 
 // ─── Raw JSON output ───────────────────────────────────────────────────────
 
-function printRaw(cfData, githubData) {
-  console.log(JSON.stringify({ cloudflare: cfData, github: githubData }, null, 2));
+function printRaw(cfData, githubData, snapResult) {
+  // Never echo process.env.SNAPCRAFT_METRICS_AUTH in any branch.
+  // The `snap` key holds either the parsed data or an error / reason descriptor.
+  const snapOut =
+    snapResult?.reason === 'missing-env'
+      ? { skipped: 'SNAPCRAFT_METRICS_AUTH not set' }
+      : snapResult?.ok
+        ? snapResult.data
+        : snapResult?.data ?? { error: 'snap fetch failed' };
+  console.log(
+    JSON.stringify({ cloudflare: cfData, github: githubData, snap: snapOut }, null, 2),
+  );
 }
 
 // ─── CLI ───────────────────────────────────────────────────────────────────
@@ -354,16 +579,27 @@ for (const arg of args) {
 const mode = flags.mode ?? 'dashboard';
 const chartType = flags.chart ?? 'ascii';
 const days = parseInt(flags.days ?? '7', 10);
-const { from, to } = dateRange(days);
+// Clamp --days to the snapcraft API max (1 year) and warn if clipping.
+const { days: clampedDays, clipped } = clampDaysToOneYear(days);
+if (clipped) {
+  console.error(
+    `${yellow}Note:${reset} --days=${days} exceeds the snapcraft API maximum of ${SNAP_MAX_DAYS}; ` +
+      `using ${clampedDays} for snapcraft queries (other sources keep the original window).`,
+  );
+}
+const { from, to } = dateRange(clampedDays);
 
 (async () => {
   try {
     // Always fetch GitHub downloads in dashboard/raw modes
     const fetchGH = mode !== 'chart';
+    // Snap metrics only in dashboard/raw (chart mode is CF-only).
+    const fetchSnap = mode !== 'chart';
 
-    const [cfResult, ghResult] = await Promise.allSettled([
+    const [cfResult, ghResult, snapResult] = await Promise.allSettled([
       fetchCloudflareStats({ from, to }),
       fetchGH ? fetchGitHubDownloads() : Promise.resolve(null),
+      fetchSnap ? fetchAllSnapMetrics({ from, to }) : Promise.resolve(null),
     ]);
 
     if (cfResult.status === 'rejected') {
@@ -373,13 +609,14 @@ const { from, to } = dateRange(days);
 
     const cfData = cfResult.value;
     const ghData = fetchGH && ghResult.status === 'fulfilled' ? ghResult.value : null;
+    const snap = snapResult.status === 'fulfilled' ? snapResult.value : null;
 
     if (mode === 'raw') {
-      printRaw(cfData, ghData);
+      printRaw(cfData, ghData, snap);
     } else if (mode === 'chart') {
       await printChartli(cfData, chartType);
     } else {
-      printDashboard(cfData, ghData, { from, to });
+      printDashboard(cfData, ghData, snap, { from, to });
     }
   } catch (err) {
     console.error(`${red}Error:${reset}`, err.message);

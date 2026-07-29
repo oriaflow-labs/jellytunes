@@ -11,3 +11,4 @@ electron.vite.config.*.mjs
 .opencode/
 .eslintcache
 coverage/
+scripts/.analytics-chartli-tmp.txt

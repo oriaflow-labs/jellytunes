@@ -7,7 +7,7 @@ JellyTunes is developed by Orain Labs. We believe in transparency and minimal da
 When you check for updates, JellyTunes sends a single anonymous request containing:
 
 - **App version** (e.g., `v1.2.0`)
-- **Platform** (e.g., `mac`, `windows`, `linux`)
+- **Platform** (e.g., `mac`, `windows`, `linux`, or `linux-snap` for installations via the Snap Store)
 - **Timestamp** of the request
 
 No personal data is collected. No IP addresses are stored. No browsing behavior is tracked.

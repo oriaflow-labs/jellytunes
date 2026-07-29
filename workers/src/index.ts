@@ -12,16 +12,27 @@ export default {
   },
 };
 
+// Exported so it can be unit-tested in isolation.
+export function parseUserAgent(ua: string): { version: string; platform: string } {
+  // Supports "JellyTunes/1.2.3", "JellyTunes/1.2.3 (linux; x64)" and
+  // "JellyTunes/1.2.3 (linux; x64) (snap)" — the trailing (snap) marker,
+  // when present, folds into the platform as "linux-snap" so existing
+  // aggregators that split the KV key by ":" keep working unchanged.
+  const uaMatch = ua.match(/JellyTunes\/([^\s(]+)(?:\s+\(([^;)]+)(?:;\s*([^)]+))?\))?/);
+  const version = uaMatch?.[1] ?? 'unknown';
+  const basePlatform = uaMatch?.[2]?.trim();
+  const isSnap = /\s\(snap\)\s*$/.test(ua);
+  const platform = basePlatform ? (isSnap ? `${basePlatform}-snap` : basePlatform) : 'unknown';
+  return { version, platform };
+}
+
 async function handleUpdateCheck(
   request: Request,
   env: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
   const ua = request.headers.get('User-Agent') ?? '';
-  // Supports current UA "JellyTunes/1.2.3" and future "JellyTunes/1.2.3 (darwin; arm64)"
-  const uaMatch = ua.match(/JellyTunes\/([^\s(]+)(?:\s+\(([^;)]+)(?:;\s*([^)]+))?\))?/);
-  const version = uaMatch?.[1] ?? 'unknown';
-  const platform = uaMatch?.[2]?.trim() ?? 'unknown';
+  const { version, platform } = parseUserAgent(ua);
   const country = (request as unknown as { cf?: { country?: string } }).cf?.country ?? 'XX';
   const optedOut = request.headers.get('X-JT-Analytics-Opt-Out') === '1';
 
