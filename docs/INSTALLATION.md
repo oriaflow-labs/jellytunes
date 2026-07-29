@@ -4,11 +4,11 @@ JellyTunes has two maintained Linux packages. AppImage is still published, but i
 
 | Package | Status | Best for |
 | --- | --- | --- |
-| **Snap** | Recommended | Most users. Automatic updates, sandboxed. |
+| **Snap** | Recommended (stable channel) | Most users. Automatic updates, sandboxed. |
 | **`.deb`** | Supported | Debian/Ubuntu users who prefer apt, or anyone hitting the keyring issue below. |
 | **AppImage** | Legacy, deprecated | Existing users only. Migrate when you can. |
 
-FFmpeg is bundled with both the Snap and the `.deb`, so there is nothing else to install.
+FFmpeg is bundled with both the `.deb` and Snap packages.
 
 ## Snap (recommended)
 
