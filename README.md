@@ -86,6 +86,8 @@ Prefer a direct download? Every platform is built on each release — grab yours
 | **Linux**   | `.deb`      | Debian and Ubuntu                                                                |
 | **Linux**   | `.AppImage` | AppImage (legacy) — see [Linux installation and migration](docs/INSTALLATION.md) |
 
+### Linux
+
 Open the installer and follow the prompts. FFmpeg is bundled with every package, so there is nothing else to install.
 
 The `.snap` is not attached to the release on purpose: a file downloaded from GitHub carries no store signature and `snap install` will reject it. Use the Snap Store button above. For the full Linux picture, including the AppImage migration path, see the [Linux installation and migration](docs/INSTALLATION.md).
