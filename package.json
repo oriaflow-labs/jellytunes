@@ -124,7 +124,8 @@
       ],
       "icon": "assets/icon.icns",
       "compression": "maximum",
-      "identity": null
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "win": {
       "target": [

@@ -101,6 +101,14 @@ jobs:
         env:
           npm_config_arch: ${{ matrix.arch }}
 
+      # Aborts the release before any publish step if the packaged .app is
+      # unsigned or its resources aren't sealed (ORAIN-0665). `needs: build`
+      # on publish-release below means a failure here blocks the GitHub
+      # Release from ever being published.
+      - name: Verify macOS code signature
+        if: matrix.platform == 'mac'
+        uses: ./.github/actions/verify-mac-codesign
+
       # Publishes to `beta`, not `stable`. Strict confinement has a failure mode
       # no build-time check covers: the snap builds green and still fails at
       # launch (ORAIN-0580, missing libnss3) or hits AppArmor denials at runtime
