@@ -3,6 +3,8 @@ import {
   buildMetricsRequestBody,
   parseSnapMetricsResponse,
   formatWeeklyDeviceChange,
+  latestNonNullIndex,
+  buildSnapSectionEntries,
   clampDaysToOneYear,
   snapAuthErrorMessage,
   SNAP_METRICS_ENDPOINT,
@@ -99,6 +101,35 @@ describe('formatWeeklyDeviceChange', () => {
     expect(entries[1][1]).toBe(0); // continued
     expect(entries[2][1]).toBe(0); // lost
   });
+
+  // The snapcraft API reports data up to *yesterday* UTC; the current day's
+  // bucket is always null. formatWeeklyDeviceChange must skip trailing nulls
+  // instead of returning [0, 0, 0] for the today's bucket.
+  it('skips trailing null buckets and uses the last bucket with data', () => {
+    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const series = [
+      { name: 'continued', values: [null, null, null, 0, 0, 0, 0, null] },
+      { name: 'lost',      values: [null, null, null, 0, 0, 0, 0, null] },
+      { name: 'new',       values: [null, null, null, 3, 9, 12, 12, null] },
+    ];
+    const entries = formatWeeklyDeviceChange(buckets, series);
+    expect(entries.map((e) => e[0])).toEqual(['new', 'continued', 'lost']);
+    // Latest bucket with data is 2026-07-30 (idx 6), not 2026-07-31 (idx 7).
+    expect(entries[0][1]).toBe(12); // new
+    expect(entries[1][1]).toBe(0);  // continued
+    expect(entries[2][1]).toBe(0);  // lost
+  });
+
+  it('returns all zeros when every bucket is null (snap just published)', () => {
+    const buckets = ['2026-07-30', '2026-07-31'];
+    const series = [
+      { name: 'continued', values: [null, null] },
+      { name: 'lost',      values: [null, null] },
+      { name: 'new',       values: [null, null] },
+    ];
+    const entries = formatWeeklyDeviceChange(buckets, series);
+    expect(entries.map((e) => e[1])).toEqual([0, 0, 0]);
+  });
 });
 
 describe('clampDaysToOneYear', () => {
@@ -125,5 +156,65 @@ describe('snapAuthErrorMessage', () => {
   it('points to header regeneration for 403', () => {
     const msg = snapAuthErrorMessage(403);
     expect(msg).toContain('SNAPCRAFT_METRICS_AUTH');
+  });
+});
+
+// The snapcraft API reports data up to *yesterday* UTC; the current day's
+// bucket is always null. latestNonNullIndex finds the last bucket where any
+// series has a non-null value, so the dashboard shows real data instead of 0.
+describe('latestNonNullIndex', () => {
+  it('returns -1 when there are no buckets', () => {
+    expect(latestNonNullIndex([], [])).toBe(-1);
+  });
+
+  it('returns -1 when every bucket is null across all series', () => {
+    const buckets = ['2026-07-30', '2026-07-31'];
+    const series = [
+      { name: 'DE', values: [null, null] },
+      { name: 'US', values: [null, null] },
+    ];
+    expect(latestNonNullIndex(buckets, series)).toBe(-1);
+  });
+
+  it('returns the last index where any series has a non-null value', () => {
+    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const series = [
+      { name: '0.6.0', values: [null, null, null, null, 8, 8, 5, null] },
+      { name: '0.5.0', values: [null, null, null, 3, 1, null, null, null] },
+    ];
+    expect(latestNonNullIndex(buckets, series)).toBe(6); // 2026-07-30
+  });
+
+  it('handles a single non-null bucket', () => {
+    const buckets = ['2026-07-30', '2026-07-31'];
+    const series = [{ name: 'DE', values: [null, null] }];
+    expect(latestNonNullIndex(buckets, series)).toBe(-1);
+  });
+});
+
+// buildSnapSectionEntries powers the four non-weekly sections in the
+// dashboard. It must pick the last bucket with data so that "today" (always
+// null from the API) does not blank out the entire chart.
+describe('buildSnapSectionEntries', () => {
+  it('returns sorted entries from the last non-null bucket', () => {
+    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const series = [
+      { name: '0.5.0', values: [null, null, null, 3, 1, null, null, null] },
+      { name: '0.6.0', values: [null, null, null, null, 8, 8, 5, null] },
+    ];
+    const { entries, latestIdx } = buildSnapSectionEntries(buckets, series);
+    expect(latestIdx).toBe(6); // 2026-07-30
+    expect(entries).toEqual([
+      ['0.6.0', 5],
+      ['0.5.0', 0],
+    ]);
+  });
+
+  it('returns empty entries when every bucket is null', () => {
+    const buckets = ['2026-07-30', '2026-07-31'];
+    const series = [{ name: '0.6.0', values: [null, null] }];
+    const { entries, latestIdx } = buildSnapSectionEntries(buckets, series);
+    expect(latestIdx).toBe(-1);
+    expect(entries).toEqual([]);
   });
 });

@@ -223,8 +223,9 @@ export function parseSnapMetricsResponse(payload, metricName) {
 // Format weekly_device_change entries in the explicit order
 // new → continued → lost, regardless of API ordering.
 export function formatWeeklyDeviceChange(buckets, series) {
-  const latestIdx = buckets.length - 1;
+  const latestIdx = latestNonNullIndex(buckets, series);
   const valueOf = (name) => {
+    if (latestIdx < 0) return 0;
     const s = series.find((x) => x.name === name);
     return s ? (s.values[latestIdx] ?? 0) : 0;
   };
@@ -233,6 +234,29 @@ export function formatWeeklyDeviceChange(buckets, series) {
     ['continued', valueOf('continued')],
     ['lost', valueOf('lost')],
   ];
+}
+
+// The snapcraft API reports data up to *yesterday* UTC; the current day's
+// bucket is always null. Find the last bucket where any series has a
+// non-null value so the dashboard shows real data instead of blanks.
+// Returns -1 when every bucket is null across all series.
+export function latestNonNullIndex(buckets, series) {
+  for (let i = buckets.length - 1; i >= 0; i--) {
+    if (series.some((s) => s.values[i] != null)) return i;
+  }
+  return -1;
+}
+
+// Build the entries for the three installed_base_by_* sections. Returns
+// { entries, latestIdx } where entries is sorted desc by value. latestIdx
+// refers to the last bucket with data (NOT necessarily the last bucket —
+// today's bucket is always null).
+export function buildSnapSectionEntries(buckets, series) {
+  const latestIdx = latestNonNullIndex(buckets, series);
+  if (latestIdx < 0) return { entries: [], latestIdx };
+  const entries = series.map((s) => [s.name, s.values[latestIdx] ?? 0]);
+  entries.sort((a, b) => b[1] - a[1]);
+  return { entries, latestIdx };
 }
 
 // Clamp --days to the API max and signal whether clipping happened.
@@ -304,13 +328,18 @@ function printSnapSection(label, metricName, payload, { from, to }) {
   let note = `📅  ${from} → ${to}`;
   if (metricName === 'weekly_device_change') {
     entries = formatWeeklyDeviceChange(parsed.buckets, parsed.series);
+    const lastIdx = latestNonNullIndex(parsed.buckets, parsed.series);
+    const latestBucket = lastIdx >= 0 ? parsed.buckets[lastIdx] : parsed.buckets[parsed.buckets.length - 1];
     note =
-      `📅  ${from} → ${to} (latest bucket: ${parsed.buckets[parsed.buckets.length - 1]})  ·  ` +
+      `📅  ${from} → ${to} (latest bucket: ${latestBucket})  ·  ` +
       `ordered new → continued → lost. Shows 100% "new" until ≥ 2 weekly windows have elapsed.`;
   } else {
-    const latestIdx = parsed.buckets.length - 1;
-    entries = parsed.series.map((s) => [s.name, s.values[latestIdx] ?? 0]);
-    entries.sort((a, b) => b[1] - a[1]);
+    const built = buildSnapSectionEntries(parsed.buckets, parsed.series);
+    entries = built.entries;
+    if (built.latestIdx >= 0) {
+      const latestBucket = parsed.buckets[built.latestIdx];
+      note = `📅  ${from} → ${to} (latest bucket: ${latestBucket})`;
+    }
   }
   section2(header, entries, { note });
 }
