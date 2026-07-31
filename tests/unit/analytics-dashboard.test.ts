@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { spawnSync } from 'child_process';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { spawnSync, spawn } from 'child_process';
+import { createServer } from 'node:http';
 
 // Smoke tests for the analytics.mjs CLI surface:
 //  - dashboard output emits exactly 4 "Snap Store" sections when env present
@@ -32,24 +33,46 @@ function runScript(env, args = []) {
   });
 }
 
-describe('analytics.mjs dashboard smoke', () => {
-  beforeEach(() => {
-    // The script will hit Cloudflare and snapcraft with the fake creds and
-    // fail. We intercept neither — we are happy if it exits non-zero here;
-    // what matters for the contract is the structure of the printed output
-    // *before* the failure surfaces (snap section heading).
-    // Actually for AC 6 the script must succeed in producing the dashboard,
-    // so we run with the real env at the integration layer (out of scope for
-    // unit tests). These unit tests only cover the no-env graceful path.
+// spawnSync blocks the event loop, so it can't be used when the child needs
+// to reach a server hosted in this same process (e.g. the CF stub below).
+function runScriptAsync(env, args = []) {
+  return new Promise((resolve) => {
+    const child = spawn('node', [SCRIPT, ...args], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
   });
+}
+
+describe('analytics.mjs dashboard smoke', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('exits 0 and prints one skip line when SNAPCRAFT_METRICS_AUTH is absent', () => {
-    const res = runScript(ENV_ABSENT);
-    expect(res.status).toBe(0);
-    const snapStoreCount = (res.stdout.match(/Snap Store/g) ?? []).length;
-    expect(snapStoreCount).toBe(1); // the single skip notice, AC 10
-    expect(res.stdout).toContain('SNAPCRAFT_METRICS_AUTH not set');
+  it('exits 0 and prints one skip line when SNAPCRAFT_METRICS_AUTH is absent', async () => {
+    // The Cloudflare fetch is unconditional, so this needs a real 200 to reach
+    // the snap section at all. Stub it locally rather than hitting production
+    // (which needs a real CLOUDFLARE_STATS_API_KEY unavailable in CI).
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ '2026-07-30:0.6.0:linux:ES': 1 }));
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address();
+      const env = {
+        ...ENV_ABSENT,
+        CLOUDFLARE_STATS_API_KEY: 'dummy',
+        CLOUDFLARE_STATS_API_URL: `http://127.0.0.1:${port}`,
+      };
+      const res = await runScriptAsync(env);
+      expect(res.status).toBe(0);
+      const snapStoreCount = (res.stdout.match(/Snap Store/g) ?? []).length;
+      expect(snapStoreCount).toBe(1); // the single skip notice, AC 10
+      expect(res.stdout).toContain('SNAPCRAFT_METRICS_AUTH not set');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it('--help documents SNAPCRAFT_METRICS_AUTH (AC 11)', () => {

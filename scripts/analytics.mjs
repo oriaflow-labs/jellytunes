@@ -6,7 +6,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CLOUDFLARE_API = 'https://api.orainlabs.dev/jellytunes/stats';
+// Overridable so tests can point at a local stub instead of production.
+const CLOUDFLARE_API = process.env.CLOUDFLARE_STATS_API_URL ?? 'https://api.orainlabs.dev/jellytunes/stats';
 const GITHUB_REPO = 'orainlabs/jellytunes';
 
 // ─── Color helpers (terminal colors without external deps) ───────────────────
