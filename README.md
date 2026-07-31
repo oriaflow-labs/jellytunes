@@ -79,11 +79,11 @@ JellyTunes is a desktop app for [Jellyfin](https://jellyfin.org) users who want 
 
 Prefer a direct download? Every platform is built on each release — grab yours from [the latest release](https://github.com/orainlabs/jellytunes/releases/latest):
 
-| Platform    | File        | Notes                                       |
-| ----------- | ----------- | ------------------------------------------- |
-| **macOS**   | `.dmg`      | Apple silicon and Intel                     |
-| **Windows** | `.exe`      | Installer                                   |
-| **Linux**   | `.deb`      | Debian and Ubuntu                           |
+| Platform    | File        | Notes                                                                            |
+| ----------- | ----------- | -------------------------------------------------------------------------------- |
+| **macOS**   | `.dmg`      | Apple silicon and Intel                                                          |
+| **Windows** | `.exe`      | Installer                                                                        |
+| **Linux**   | `.deb`      | Debian and Ubuntu                                                                |
 | **Linux**   | `.AppImage` | AppImage (legacy) — see [Linux installation and migration](docs/INSTALLATION.md) |
 
 Open the installer and follow the prompts. FFmpeg is bundled with every package, so there is nothing else to install.
@@ -92,21 +92,29 @@ The `.snap` is not attached to the release on purpose: a file downloaded from Gi
 
 ### macOS: "App is damaged" or Gatekeeper warning
 
-JellyTunes is not signed with an Apple Developer certificate. macOS may block it on first launch, especially on macOS 15 (Sequoia). To open it:
+macOS blocks JellyTunes the first time you open it. What it says depends on your Mac:
 
-**Option A — via Terminal (recommended):**
+| Your Mac                         | What you see                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| **Apple silicon** (M1 and later) | _"JellyTunes is damaged and can't be opened. You should move it to the Bin."_ |
+| **Intel**                        | _"JellyTunes can't be opened because it is from an unidentified developer."_  |
 
-```bash
-xattr -cr /Applications/JellyTunes.app
-```
+**On Apple silicon, "damaged" does not mean the download is broken.** It is the wording macOS uses for any quarantined app it cannot verify, and JellyTunes cannot be verified because it is not signed with an Apple Developer certificate. Mac OS builds have been confirmed to install and run on Apple silicon after the steps below.
 
-Then open the app normally.
+Click **Cancel**, not **Move to Bin**, and then:
 
-**Option B — via System Settings:**
+1. Open the `.dmg` and drag **JellyTunes** into your **Applications** folder.
+2. Open **Terminal** and run:
+   ```bash
+   xattr -cr /Applications/JellyTunes.app
+   ```
+3. Open JellyTunes normally.
 
-1. Try to open the app (it will be blocked)
-2. Go to **System Settings → Privacy & Security → Security**
-3. Click **"Open Anyway"** next to the JellyTunes entry
+That command clears the `com.apple.quarantine` flag your browser attaches to anything it downloads. You need it once per install, and again after each update.
+
+On **Intel** Macs you can avoid Terminal: try to open the app, then go to **System Settings → Privacy & Security** and click **"Open Anyway"** next to the JellyTunes entry. Apple silicon usually offers no such button for the "damaged" error, so use the command above.
+
+Signing the app so macOS stops asking requires a paid Apple Developer account, which JellyTunes does not have yet. Until then this step is unavoidable — it is not a bug. See [issue #12](https://github.com/orainlabs/jellytunes/issues/12) for the background.
 
 ### Windows: "Windows protected your PC" (SmartScreen)
 

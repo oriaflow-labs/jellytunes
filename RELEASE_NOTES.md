@@ -38,4 +38,20 @@ Syncing to USB and SD cards needs the `removable-media` interface. Most systems 
 
 ---
 
+### Installing on macOS
+
+Download the `.dmg` below and drag JellyTunes into your Applications folder. macOS will block it the first time you open it, because the app isn't signed with an Apple Developer certificate.
+
+On **Apple silicon** the wording is alarming — _"JellyTunes is damaged and can't be opened. You should move it to the Bin."_ **The download isn't damaged.** That's what macOS says about any quarantined app it can't verify. Click **Cancel**, not Move to Bin, then run:
+
+```
+xattr -cr /Applications/JellyTunes.app
+```
+
+Open the app normally afterwards. You'll need this once per install, including after updates.
+
+On **Intel** you get the milder "unidentified developer" message, and you can either run the same command or click **Open Anyway** in **System Settings → Privacy & Security**.
+
+---
+
 Want the full technical breakdown? See the [CHANGELOG.md](CHANGELOG.md).
