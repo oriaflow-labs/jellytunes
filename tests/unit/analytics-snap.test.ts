@@ -106,26 +106,35 @@ describe('formatWeeklyDeviceChange', () => {
   // bucket is always null. formatWeeklyDeviceChange must skip trailing nulls
   // instead of returning [0, 0, 0] for the today's bucket.
   it('skips trailing null buckets and uses the last bucket with data', () => {
-    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const buckets = [
+      '2026-07-24',
+      '2026-07-25',
+      '2026-07-26',
+      '2026-07-27',
+      '2026-07-28',
+      '2026-07-29',
+      '2026-07-30',
+      '2026-07-31',
+    ];
     const series = [
       { name: 'continued', values: [null, null, null, 0, 0, 0, 0, null] },
-      { name: 'lost',      values: [null, null, null, 0, 0, 0, 0, null] },
-      { name: 'new',       values: [null, null, null, 3, 9, 12, 12, null] },
+      { name: 'lost', values: [null, null, null, 0, 0, 0, 0, null] },
+      { name: 'new', values: [null, null, null, 3, 9, 12, 12, null] },
     ];
     const entries = formatWeeklyDeviceChange(buckets, series);
     expect(entries.map((e) => e[0])).toEqual(['new', 'continued', 'lost']);
     // Latest bucket with data is 2026-07-30 (idx 6), not 2026-07-31 (idx 7).
     expect(entries[0][1]).toBe(12); // new
-    expect(entries[1][1]).toBe(0);  // continued
-    expect(entries[2][1]).toBe(0);  // lost
+    expect(entries[1][1]).toBe(0); // continued
+    expect(entries[2][1]).toBe(0); // lost
   });
 
   it('returns all zeros when every bucket is null (snap just published)', () => {
     const buckets = ['2026-07-30', '2026-07-31'];
     const series = [
       { name: 'continued', values: [null, null] },
-      { name: 'lost',      values: [null, null] },
-      { name: 'new',       values: [null, null] },
+      { name: 'lost', values: [null, null] },
+      { name: 'new', values: [null, null] },
     ];
     const entries = formatWeeklyDeviceChange(buckets, series);
     expect(entries.map((e) => e[1])).toEqual([0, 0, 0]);
@@ -177,7 +186,16 @@ describe('latestNonNullIndex', () => {
   });
 
   it('returns the last index where any series has a non-null value', () => {
-    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const buckets = [
+      '2026-07-24',
+      '2026-07-25',
+      '2026-07-26',
+      '2026-07-27',
+      '2026-07-28',
+      '2026-07-29',
+      '2026-07-30',
+      '2026-07-31',
+    ];
     const series = [
       { name: '0.6.0', values: [null, null, null, null, 8, 8, 5, null] },
       { name: '0.5.0', values: [null, null, null, 3, 1, null, null, null] },
@@ -197,7 +215,16 @@ describe('latestNonNullIndex', () => {
 // null from the API) does not blank out the entire chart.
 describe('buildSnapSectionEntries', () => {
   it('returns sorted entries from the last non-null bucket', () => {
-    const buckets = ['2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31'];
+    const buckets = [
+      '2026-07-24',
+      '2026-07-25',
+      '2026-07-26',
+      '2026-07-27',
+      '2026-07-28',
+      '2026-07-29',
+      '2026-07-30',
+      '2026-07-31',
+    ];
     const series = [
       { name: '0.5.0', values: [null, null, null, 3, 1, null, null, null] },
       { name: '0.6.0', values: [null, null, null, null, 8, 8, 5, null] },

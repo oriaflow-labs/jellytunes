@@ -39,10 +39,14 @@ if [ ! -e "$target" ]; then
 fi
 
 mount_point=""
+quarantine_dir=""
 
 cleanup() {
   if [ -n "$mount_point" ] && [ -d "$mount_point" ]; then
     hdiutil detach "$mount_point" -quiet || true
+  fi
+  if [ -n "$quarantine_dir" ] && [ -d "$quarantine_dir" ]; then
+    rm -rf "$quarantine_dir"
   fi
 }
 trap cleanup EXIT
@@ -91,3 +95,34 @@ if echo "$info" | grep -qi 'Sealed Resources=none'; then
 fi
 
 echo "Code signature OK: identifier and sealed resources verified for $app_path."
+
+# Informational only — never changes the exit code.
+#
+# The checks above prove the bundle is well formed. They say nothing about what
+# a user actually sees on first launch, which is Gatekeeper's call. An ad-hoc
+# signature is valid but not notarized, so `spctl` reports "rejected" for as
+# long as JellyTunes ships without a Developer ID certificate. The useful
+# signal is the reason it gives: that is what decides whether a user meets the
+# hard "app is damaged" error or the ordinary "unidentified developer" prompt
+# they can dismiss from System Settings. Gating on this would mean the job
+# could never go green without a paid certificate (ORAIN-0665).
+echo
+echo "Gatekeeper assessment (informational — does not affect the exit code):"
+
+quarantine_dir="$(mktemp -d)"
+app_copy="$quarantine_dir/$(basename "$app_path")"
+
+# ditto rather than cp -R: it preserves the extended attributes and symlinks
+# inside the bundle, so the signature survives the copy off the disk image.
+if ditto "$app_path" "$app_copy" 2>/dev/null; then
+  # Without com.apple.quarantine, Gatekeeper waves the bundle straight
+  # through and the assessment tells us nothing. This is the attribute a
+  # browser download would have attached.
+  xattr -w com.apple.quarantine \
+    "0083;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)" \
+    "$app_copy" 2>/dev/null || true
+
+  spctl -a -vvv -t exec "$app_copy" 2>&1 || true
+else
+  echo "  Could not copy the bundle out of the image; skipping the assessment."
+fi
