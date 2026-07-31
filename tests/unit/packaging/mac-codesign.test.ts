@@ -34,9 +34,17 @@ describe('macOS code signing (ORAIN-0665)', () => {
 
   it('ships a single, executable code-signature verification script', () => {
     const script = readProjectFile('scripts/verify-mac-codesign.sh');
-    const mode = statSync('scripts/verify-mac-codesign.sh').mode;
 
-    expect(mode & 0o111).not.toBe(0);
+    // checks.yml runs this suite on ubuntu-latest and windows-latest. NTFS has
+    // no POSIX execute bit, so statSync().mode reports 0 for it on Windows and
+    // this assertion fails on a property the platform cannot represent. The
+    // bit itself is still guarded: it is stored in git as mode 100755, and the
+    // ubuntu leg checks it on every push.
+    if (process.platform !== 'win32') {
+      const mode = statSync('scripts/verify-mac-codesign.sh').mode;
+      expect(mode & 0o111).not.toBe(0);
+    }
+
     expect(script).toContain('codesign --verify --deep --strict');
     expect(script).toContain('expected_identifier="com.jellytunes.app"');
     expect(script).toContain('Identifier=$expected_identifier');
