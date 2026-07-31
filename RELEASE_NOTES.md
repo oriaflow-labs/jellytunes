@@ -12,7 +12,7 @@ sudo snap install jellytunes
 
 **The `.deb` works on Ubuntu 24.04.** It shipped without an AppArmor profile, which meant the app refused to launch on 24.04 and left you staring at a sandbox error. The profile is now included and enabled, and the package metadata is complete.
 
-**AppImage is deprecated.** It still runs today, but Ubuntu 24.04+ can block the sandbox Electron relies on, and that is not something we can fix from our side. If you're on the AppImage, the [migration guide](docs/INSTALLATION.md) walks you through moving to Snap or `.deb`.
+**AppImage is deprecated.** It still runs today, but Ubuntu 24.04+ can block the sandbox Electron relies on, and that is not something we can fix from our side. If you're on the AppImage, the [migration guide](https://github.com/orainlabs/jellytunes/blob/main/docs/INSTALLATION.md) walks you through moving to Snap or `.deb`.
 
 ### Also fixed
 
@@ -22,36 +22,18 @@ sudo snap install jellytunes
 
 ---
 
-### Installing on Linux
+### Installing
 
-**Snap (recommended).** The `.snap` isn't attached to this release on purpose. Install it from the Store instead, since a manually downloaded file won't carry the Store's signature:
+Full instructions for every platform live in the [installation guide](https://github.com/orainlabs/jellytunes#installation). That page is kept current, so check it there rather than here if something doesn't work.
 
-```
-sudo snap install jellytunes
-```
-
-Syncing to USB and SD cards needs the `removable-media` interface. Most systems connect it automatically; if yours doesn't, JellyTunes tells you and gives you the command.
-
-**`.deb`.** Download it from the assets below.
-
-**AppImage (legacy).** Still available, but deprecated. See the [migration guide](docs/INSTALLATION.md).
-
----
-
-### Installing on macOS
-
-Download the `.dmg` below and drag JellyTunes into your Applications folder. macOS will block it the first time you open it, because the app isn't signed with an Apple Developer certificate.
-
-On **Apple silicon** the wording is alarming — _"JellyTunes is damaged and can't be opened. You should move it to the Bin."_ **The download isn't damaged.** That's what macOS says about any quarantined app it can't verify. Click **Cancel**, not Move to Bin, then run:
+**macOS: read this before you open the app.** JellyTunes isn't signed with an Apple Developer certificate, and on Apple silicon macOS reports that as _"JellyTunes is damaged and can't be opened. You should move it to the Bin."_ The download is not damaged. Click Cancel, drag the app into your Applications folder, then run:
 
 ```
 xattr -cr /Applications/JellyTunes.app
 ```
 
-Open the app normally afterwards. You'll need this once per install, including after updates.
-
-On **Intel** you get the milder "unidentified developer" message, and you can either run the same command or click **Open Anyway** in **System Settings → Privacy & Security**.
+**Linux: install from the Snap Store**, not from the assets below. The `.snap` isn't attached on purpose, because a file downloaded from GitHub carries no store signature and `snap install` rejects it. The `.deb` is in the assets, and so is the AppImage (legacy), which still runs but is deprecated.
 
 ---
 
-Want the full technical breakdown? See the [CHANGELOG.md](CHANGELOG.md).
+Want the full technical breakdown? See the [CHANGELOG.md](https://github.com/orainlabs/jellytunes/blob/main/CHANGELOG.md).

@@ -90,7 +90,17 @@ Prefer a direct download? Every platform is built on each release — grab yours
 
 Open the installer and follow the prompts. FFmpeg is bundled with every package, so there is nothing else to install.
 
-The `.snap` is not attached to the release on purpose: a file downloaded from GitHub carries no store signature and `snap install` will reject it. Use the Snap Store button above. For the full Linux picture, including the AppImage migration path, see the [Linux installation and migration](docs/INSTALLATION.md).
+### Linux: install from the Snap Store
+
+```bash
+sudo snap install jellytunes
+```
+
+The `.snap` is not attached to the release on purpose: a file downloaded from GitHub carries no store signature and `snap install` will reject it. Use the Snap Store button above, or the command.
+
+Syncing to USB drives and SD cards needs the `removable-media` interface. Most systems connect it on install; if yours doesn't, JellyTunes says so at startup and gives you the command.
+
+The `.deb` is equally supported and runs unconfined, which matters if your desktop has no working Secret portal and JellyTunes keeps asking you to log in. AppImage still runs but is deprecated. Both cases, and the migration path off AppImage, are covered in [Linux installation and migration](docs/INSTALLATION.md).
 
 ### macOS: "App is damaged" or Gatekeeper warning
 

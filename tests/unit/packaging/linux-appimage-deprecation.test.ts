@@ -46,6 +46,10 @@ describe('Linux AppImage deprecation', () => {
     const releaseNotes = readProjectFile('RELEASE_NOTES.md');
 
     expect(releaseNotes).toContain('AppImage (legacy)');
-    expect(releaseNotes).toContain('[migration guide](docs/INSTALLATION.md)');
+    // Absolute, not `docs/INSTALLATION.md`. See release-notes-links.test.ts for
+    // why a relative path here would strand the reader on a frozen copy.
+    expect(releaseNotes).toContain(
+      '[migration guide](https://github.com/orainlabs/jellytunes/blob/main/docs/INSTALLATION.md)',
+    );
   });
 });
