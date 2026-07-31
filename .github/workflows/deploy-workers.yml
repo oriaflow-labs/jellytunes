@@ -17,7 +17,7 @@ jobs:
         working-directory: workers
     steps:
       - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
-      - uses: cloudflare/wrangler-action@a61fbea3226347cc885c6d1b26b3f47b48e6c0f8
+      - uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
