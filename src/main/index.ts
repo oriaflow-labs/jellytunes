@@ -25,7 +25,7 @@ import { runSnapConnectionProbes, type SnapctlResult } from './snap-connections'
 import { listRemovableMountpoints } from './removable-mounts';
 import { detectLinuxFilesystem } from './filesystem-type';
 import { getOrCreateDeviceId } from './device-id';
-import { buildAuthHeader } from '../shared/auth-headers';
+import { buildAuthHeader, CLIENT_NAME_DEFAULT, DEFAULT_DEVICE_NAME } from '../shared/auth-headers';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -439,8 +439,8 @@ async function downloadFromJellyfin(
   // persisted, so the cost is just a file read on first invocation per run).
   const authHeader = buildAuthHeader({
     token: apiKey,
-    client: 'JellyTunes',
-    device: os.hostname() || 'Unknown',
+    client: CLIENT_NAME_DEFAULT,
+    device: os.hostname() || DEFAULT_DEVICE_NAME,
     deviceId: getOrCreateDeviceId(),
     version: app.getVersion(),
   });
