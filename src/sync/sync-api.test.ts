@@ -1236,3 +1236,53 @@ describe('sync-api', () => {
     });
   });
 });
+
+// ORAIN-0562: the legacy `X-Emby-Token` / `X-MediaBrowser-Token` pair must be
+// gone, and the new `Authorization: MediaBrowser Token="..."` header must
+// appear on every request the API client makes.
+describe('auth header (ORAIN-0562)', () => {
+  it('emits Authorization: MediaBrowser Token="<key>" and drops the legacy headers', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ Items: [] }),
+    });
+    const api = createApiClient({
+      baseUrl: 'https://jellyfin.test',
+      apiKey: 'k-123',
+      userId: 'u',
+      fetch: mockFetch,
+      identity: {
+        client: 'JellyTunes',
+        device: 'laptop',
+        deviceId: 'device-1',
+        version: '0.6.0',
+      },
+    });
+    await api.getAlbumTracks('album-x');
+    const init = mockFetch.mock.calls[0]?.[1];
+    expect(init).toBeDefined();
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers['X-Emby-Token']).toBeUndefined();
+    expect(headers['X-MediaBrowser-Token']).toBeUndefined();
+    expect(headers.Authorization).toBe(
+      'Authorization: MediaBrowser Token="k-123", Client="JellyTunes", Device="laptop", DeviceId="device-1", Version="0.6.0"',
+    );
+  });
+
+  it('falls back to Token-only when no identity is provided (no identity crash)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ Items: [] }),
+    });
+    const api = createApiClient({
+      baseUrl: 'https://jellyfin.test',
+      apiKey: 'k-only',
+      userId: 'u',
+      fetch: mockFetch,
+    });
+    await api.getAlbumTracks('album-y');
+    const init = mockFetch.mock.calls[0]?.[1];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Authorization: MediaBrowser Token="k-only"');
+  });
+});

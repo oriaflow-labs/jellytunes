@@ -1,11 +1,23 @@
 import type { Artist, Album, Playlist, Genre, AlbumArtist } from '../appTypes';
+import { getAuthorizationHeader } from './authContext';
 
 export const PAGE_SIZE = 50;
 
+/**
+ * ORAIN-0562: builds the request headers using the new Jellyfin
+ * `Authorization: MediaBrowser Token="..."` header. The legacy
+ * `X-Emby-Token` / `X-MediaBrowser-Token` headers have been removed: Jellyfin
+ * is deprecating them and a Jellyfin server with
+ * `EnableLegacyAuthorization=false` will return 401 for any request that
+ * carries them.
+ *
+ * The signature stays synchronous so existing callers don't change. The
+ * deviceId + version values come from a module-level cache primed at app
+ * boot — see `primeRenderAuthContext` in `./authContext`.
+ */
 export function jellyfinHeaders(apiKey: string): Record<string, string> {
   return {
-    'X-MediaBrowser-Token': apiKey,
-    'X-Emby-Token': apiKey,
+    Authorization: getAuthorizationHeader(apiKey),
     'Content-Type': 'application/json',
   };
 }

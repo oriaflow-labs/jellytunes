@@ -57,6 +57,8 @@ export interface MockWindowApi {
   ) => () => void;
   isFfmpegAvailable: () => Promise<boolean>;
   getVersion: () => Promise<string>;
+  // ORAIN-0562: stable per-installation id used by `jellyfinHeaders`.
+  getDeviceId: () => Promise<string>;
   selectFolder: () => Promise<string | null>;
   getFolderStats: (folderPath: string) => Promise<{
     exists: boolean;
@@ -177,6 +179,7 @@ export function createMockWindowApi(overrides?: Partial<MockWindowApi>): MockWin
     onSyncProgress: () => () => {},
     isFfmpegAvailable: () => Promise.resolve(true),
     getVersion: () => Promise.resolve('0.0.0'),
+    getDeviceId: () => Promise.resolve('test-device-id'),
     selectFolder: () => Promise.resolve(null),
     getFolderStats: () => Promise.resolve({ exists: false }),
     estimateSize: () => Promise.resolve({ trackCount: 0, totalBytes: 0, formatBreakdown: {} }),

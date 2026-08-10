@@ -7,6 +7,16 @@
 
 import type { TrackInfo, ItemType, SyncLogger } from './types';
 import type { JellyfinTrackItem, JellyfinAlbumItem } from './types';
+import { buildAuthHeader, type BuildAuthHeaderInput } from '../shared/auth-headers';
+
+/**
+ * ORAIN-0562: optional identity used to populate the `Authorization:
+ * MediaBrowser Token="..." Client="..." Device="..." DeviceId="..." Version="..."`
+ * header. All callers MUST provide at least `apiKey` (already required); the
+ * rest defaults to the bare `Token="..."` shape if omitted, so existing tests
+ * that exercise a vanilla client keep working.
+ */
+export type ApiIdentity = Omit<BuildAuthHeaderInput, 'token'>;
 
 /**
  * API client configuration
@@ -24,6 +34,12 @@ export interface ApiClientConfig {
   fetch?: typeof fetch;
   /** Logger for debug output */
   logger?: SyncLogger;
+  /**
+   * ORAIN-0562: identity metadata for the new auth header. When omitted,
+   * the client falls back to a bare `Authorization: MediaBrowser Token="..."`
+   * header (legal but anonymous on the server's active-devices list).
+   */
+  identity?: ApiIdentity;
 }
 
 /**
@@ -170,6 +186,7 @@ class SyncApiImpl implements SyncApi {
   // bounds album track requests without that risk.
   private albumLimiter = new ConcurrencyLimiter(API_CONCURRENCY);
   private logger?: SyncLogger;
+  private identity?: ApiIdentity;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
@@ -178,12 +195,24 @@ class SyncApiImpl implements SyncApi {
     this.timeout = config.timeout ?? 30000;
     this.fetchFn = config.fetch ?? fetch;
     this.logger = config.logger;
+    this.identity = config.identity;
   }
 
+  /**
+   * ORAIN-0562: builds the new `Authorization: MediaBrowser` header. With the
+   * legacy `X-Emby-Token` / `X-MediaBrowser-Token` pair removed — Jellyfin is
+   * deprecating those and a server with `EnableLegacyAuthorization=false`
+   * would 401 every request. Pass `identity` in the config to populate the
+   * optional fields (Client/Device/DeviceId/Version). When omitted, only the
+   * mandatory `Token` field is rendered (anonymous on the server's dashboard
+   * but still legal).
+   */
   private getAuthHeaders(): Record<string, string> {
+    const input = this.identity
+      ? { ...this.identity, token: this.apiKey }
+      : { token: this.apiKey };
     return {
-      'X-MediaBrowser-Token': this.apiKey,
-      'X-Emby-Token': this.apiKey,
+      Authorization: buildAuthHeader(input),
     };
   }
 

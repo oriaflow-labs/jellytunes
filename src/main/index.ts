@@ -6,7 +6,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // Import new sync module
-import { createSyncCore, createApiClient, type CoverArtMode, type TrackInfo } from '../sync';
+import { createSyncCore, type CoverArtMode, type TrackInfo } from '../sync';
+// ORAIN-0562: main-side wrapper that injects the auth identity (client/version/
+// device/deviceId) so call sites in `main/index.ts` don't repeat themselves.
+import { createMainApiClient } from './api-client';
 import { detectSnapEnv, type SnapEnv } from './snap-env';
 import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
 import { createSecureStorageProvider, type StorageProvider } from './secure-storage';
@@ -21,6 +24,8 @@ import {
 import { runSnapConnectionProbes, type SnapctlResult } from './snap-connections';
 import { listRemovableMountpoints } from './removable-mounts';
 import { detectLinuxFilesystem } from './filesystem-type';
+import { getOrCreateDeviceId } from './device-id';
+import { buildAuthHeader } from '../shared/auth-headers';
 
 // ─── Snap detection (ORAIN-0573) ─────────────────────────────────────────
 // snapd sets SNAP (mount path) and SNAP_NAME (registered name) on every
@@ -430,6 +435,15 @@ async function downloadFromJellyfin(
   maxRetries: number = 3,
 ): Promise<{ success: boolean; error?: string }> {
   const RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff
+  // ORAIN-0562: build the auth header once per call (the deviceId is
+  // persisted, so the cost is just a file read on first invocation per run).
+  const authHeader = buildAuthHeader({
+    token: apiKey,
+    client: 'JellyTunes',
+    device: os.hostname() || 'Unknown',
+    deviceId: getOrCreateDeviceId(),
+    version: app.getVersion(),
+  });
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -438,8 +452,7 @@ async function downloadFromJellyfin(
 
       const response = await fetch(`${serverUrl}/Items/${trackId}/Download`, {
         headers: {
-          'X-MediaBrowser-Token': apiKey,
-          'X-Emby-Token': apiKey,
+          Authorization: authHeader,
         },
         signal: controller.signal,
       });
@@ -1137,7 +1150,7 @@ ipcMain.handle(
 
       // Fetch cache misses from Jellyfin and store in cache
       if (cacheMisses.length > 0) {
-        const api = createApiClient({
+        const api = createMainApiClient({
           baseUrl: normalizedUrl,
           apiKey,
           userId,
@@ -1211,6 +1224,10 @@ ipcMain.handle('sync:cancel', () => {
   return { cancelled: true };
 });
 ipcMain.handle('app:version', () => app.getVersion());
+// ORAIN-0562: persistent per-installation DeviceId for the Jellyfin
+// Authorization header. Stable across launches so the server doesn't see a new
+// "device" on every boot of the app.
+ipcMain.handle('app:getDeviceId', () => getOrCreateDeviceId());
 ipcMain.handle('dialog:selectFolder', async () => {
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory'],
@@ -1274,7 +1291,7 @@ ipcMain.handle(
   ) => {
     try {
       const { serverUrl, apiKey, userId, itemId, itemType } = options;
-      const api = createApiClient({
+      const api = createMainApiClient({
         baseUrl: serverUrl.replace(/\/$/, ''),
         apiKey,
         userId,
@@ -1339,7 +1356,7 @@ ipcMain.handle(
 
       // Fetch cache misses from Jellyfin and store in cache
       if (cacheMisses.length > 0) {
-        const api = createApiClient({
+        const api = createMainApiClient({
           baseUrl: normalizedUrl,
           apiKey,
           userId,

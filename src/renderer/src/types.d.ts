@@ -86,6 +86,9 @@ interface Api {
   onSyncProgress: (callback: (progress: SyncProgress) => void) => (() => void) | undefined;
   isFfmpegAvailable: () => Promise<boolean>;
   getVersion: () => Promise<string>;
+  // ORAIN-0562: stable per-installation id used in the Jellyfin Authorization
+  // header. Persisted in main process; survives app restarts.
+  getDeviceId: () => Promise<string>;
   selectFolder: () => Promise<string | null>;
   getFolderStats: (path: string) => Promise<{
     exists: boolean;

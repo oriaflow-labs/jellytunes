@@ -63,7 +63,13 @@ export {
 } from './sync-config';
 
 // API
-export { createApiClient, createMockApiClient, type SyncApi } from './sync-api';
+export {
+  createApiClient,
+  createMockApiClient,
+  type SyncApi,
+  type ApiClientConfig,
+  type ApiIdentity,
+} from './sync-api';
 
 // Files
 export {

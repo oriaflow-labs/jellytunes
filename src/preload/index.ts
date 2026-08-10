@@ -118,6 +118,10 @@ const api = {
 
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
 
+  // ORAIN-0562: stable per-installation DeviceId for the Jellyfin Authorization
+  // header. Cached in main process; safe to call repeatedly.
+  getDeviceId: (): Promise<string> => ipcRenderer.invoke('app:getDeviceId'),
+
   selectFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:selectFolder'),
 
   getFolderStats: (
