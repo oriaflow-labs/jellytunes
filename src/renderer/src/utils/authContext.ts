@@ -8,9 +8,8 @@
  * resolved values here, and let `jellyfinHeaders` read them synchronously.
  *
  * If the IPC fails (e.g. main not booted yet on first paint) we fall back to
- * a generated temporary id so the request is still valid — Jellyfin just sees
- * a fresh "device" per launch until main finishes booting. The boot-time
- * `prime()` call below runs before any render reaches fetch().
+ * a stable temporary id so the request is still valid — Jellyfin sees one
+ * consistent temp device for the whole session until main finishes booting.
  */
 
 import { CLIENT_NAME_DEFAULT, buildAuthHeader } from '@shared/auth-headers';
@@ -25,6 +24,7 @@ export interface RenderAuthContext {
 const TEMP_DEVICE_PREFIX = 'tmp-';
 
 let cachedContext: RenderAuthContext | null = null;
+let tempContext: RenderAuthContext | null = null;
 
 /**
  * Resolve deviceId + version once at boot. Safe to call before React mounts;
@@ -32,34 +32,46 @@ let cachedContext: RenderAuthContext | null = null;
  * to `getRenderAuthContext()` always hit the cache.
  */
 export async function primeRenderAuthContext(): Promise<void> {
-  // Honest best-effort: if main isn't ready yet, retry once on the next
-  // microtask and fall back to a temp id. The render path then uses the temp
-  // id until main comes online; subsequent remounts re-prime.
-  const [deviceId, version] = await Promise.all([
-    window.api.getDeviceId(),
-    window.api.getVersion(),
-  ]);
+  try {
+    const [deviceId, version] = await Promise.all([
+      window.api.getDeviceId(),
+      window.api.getVersion(),
+    ]);
 
-  cachedContext = {
-    deviceId,
-    version,
-    device: guessDeviceName(),
-  };
+    cachedContext = {
+      deviceId,
+      version,
+      device: guessDeviceName(),
+    };
+    // Clear the temp fallback now that the real context is available.
+    tempContext = null;
+  } catch (err) {
+    // IPC failed (main not ready, channel error, etc.). Log once and keep
+    // using the stable temp fallback so requests stay valid.
+    console.warn('[authContext] primeRenderAuthContext failed, using temp deviceId:', err);
+    // tempContext is already set by getRenderAuthContext() if it was called early
+  }
 }
 
 /** Test-only — clears the cache so tests can re-prime with mocked values. */
 export function _resetRenderAuthContextForTests(): void {
   cachedContext = null;
+  tempContext = null;
 }
 
-/** Returns the cached context, or a temporary fallback if prime hasn't run. */
+/** Returns the cached context, or a stable temporary fallback if prime hasn't run. */
 export function getRenderAuthContext(): RenderAuthContext {
   if (cachedContext) return cachedContext;
-  return {
-    deviceId: `${TEMP_DEVICE_PREFIX}${randomToken()}`,
-    version: '0.0.0',
-    device: guessDeviceName(),
-  };
+  // Return a single stable temp context for the whole session (not a fresh
+  // random id per call) so Jellyfin sees at most one temp device.
+  if (!tempContext) {
+    tempContext = {
+      deviceId: `${TEMP_DEVICE_PREFIX}${randomToken()}`,
+      version: '0.0.0',
+      device: guessDeviceName(),
+    };
+  }
+  return tempContext;
 }
 
 /**

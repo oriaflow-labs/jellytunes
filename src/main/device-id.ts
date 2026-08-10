@@ -8,6 +8,9 @@
  *
  * Persistence: a single `device-id.txt` inside Electron's `userData` dir.
  * Generation: UUIDv4 via Node's `crypto.randomUUID()` (RFC 4122 random).
+ * Atomic write: write to a `.tmp` sibling then `fs.renameSync` so a crash
+ * mid-write never leaves a corrupt/empty file.
+ * File permissions: `0o600` so only the owning user can read the id.
  * No backup/replication — the file is local-only and a fresh id on reinstall
  * is acceptable (it would just look like a new device, which is what jellyfin
  * does anyway).
@@ -18,6 +21,7 @@ import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 
 const DEVICE_ID_FILENAME = 'device-id.txt';
+const TMP_SUFFIX = '.tmp';
 
 /** In-memory cache so we don't re-read the file on every fetch. */
 let cached: string | null = null;
@@ -42,25 +46,32 @@ export function getOrCreateDeviceId(): string {
 
   const filePath = deviceIdFilePath();
 
-  // Read first, only write if missing/invalid. This keeps behaviour identical
-  // across restart boundaries: first run of a fresh install = write; every
-  // later run = reuse.
-  if (fs.existsSync(filePath)) {
-    try {
-      const raw = fs.readFileSync(filePath, 'utf-8').trim();
-      if (raw && isLikelyUuid(raw)) {
-        cached = raw;
-        return raw;
-      }
-    } catch {
-      // Fall through to generate a fresh id below.
+  // Try to read the existing file. Use a single readFileSync in a try/catch
+  // instead of existsSync + readFileSync (TOCTOU race + extra syscall).
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8').trim();
+    if (raw && isLikelyUuid(raw)) {
+      cached = raw;
+      return raw;
+    }
+    // File exists but content is invalid (not a UUID) — fall through to regenerate.
+  } catch (err: unknown) {
+    // ENOENT (file missing) or any read error — fall through to generate.
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[device-id] read failed, regenerating:', err);
     }
   }
 
-  // Ensure the parent dir exists (userData is normally there, but defensive).
-  fs.mkdirSync(app.getPath('userData'), { recursive: true });
   const fresh = randomUUID();
-  fs.writeFileSync(filePath, fresh, 'utf-8');
+  // Atomic write: write to .tmp sibling then rename into place so a crash
+  // mid-write never leaves a corrupt/empty device-id.txt.
+  const tmpPath = filePath + TMP_SUFFIX;
+  fs.writeFileSync(tmpPath, fresh, { encoding: 'utf-8', mode: 0o600 });
+  fs.renameSync(tmpPath, filePath);
+  // Also set mode on the final file (some fs implementations may preserve
+  // the tmp file's mode through rename, but be explicit).
+  fs.chmodSync(filePath, 0o600);
+
   cached = fresh;
   return fresh;
 }

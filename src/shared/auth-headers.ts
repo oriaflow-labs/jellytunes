@@ -56,12 +56,18 @@ export function buildAuthHeader(input: BuildAuthHeaderInput): string {
 }
 
 /**
- * Strip the double quotes that would otherwise terminate the field value mid-header.
+ * Strip characters that would corrupt the header value:
+ * - `"` would terminate the quoted field early.
+ * - `\r` / `\n` would inject a new header line (CRLF injection).
+ * - `\0` is never valid in a header value.
+ *
  * Jellyfin's parser splits on `"` so an unescaped embedded quote would corrupt
- * everything that follows.
+ * everything that follows. CRLF is rejected by Node's `fetch` and Chromium
+ * (they throw TypeError), but we strip it here so the helper always produces
+ * a value that passes those checks.
  */
 function sanitizeValue(value: string): string {
-  return value.replace(/"/g, '');
+  return value.replace(/[\r\n"\0]/g, '');
 }
 
 export interface ParsedAuthHeader {
