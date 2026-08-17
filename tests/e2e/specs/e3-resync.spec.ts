@@ -1,7 +1,11 @@
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect, login } from '../support/app';
 import { addDestination, listTree, selectAlbum } from '../support/actions';
+
+const library = JSON.parse(
+  readFileSync(join(__dirname, '..', 'fixtures', 'library.json'), 'utf8'),
+) as { albumAlphaTree: string[] };
 
 test('E3: re-syncing the same selection copies nothing and leaves files untouched', async ({
   page,
@@ -23,14 +27,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
   await page.getByTestId('confirm-sync-button').click();
   await expect(page.getByTestId('sync-preview-modal')).toBeHidden();
 
-  // Wait for sync completion - the sync-complete modal should appear
-  // This indicates the sync operation has finished
-  const expectedFiles = [
-    'music/Test Artist A/Album Alpha/01 - Alpha One.flac',
-    'music/Test Artist A/Album Alpha/02 - Alpha Two.flac',
-    'music/Test Artist A/Album Alpha/03 - Alpha Three.flac',
-  ];
-
+  // Wait for sync completion - verify expected files are present
   await expect
     .poll(
       () =>
@@ -39,7 +36,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
           .sort(),
       { timeout: 120_000 },
     )
-    .toEqual(expectedFiles);
+    .toEqual(library.albumAlphaTree);
 
   // Record mtimes from first sync (only real files, not temp files)
   const before = listTree(destDir)
@@ -49,13 +46,17 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
       mtimeMs: statSync(join(destDir, rel)).mtimeMs,
     }));
 
-  // Close sync-complete modal by clicking the close button
-  await page
-    .getByRole('button', { name: /^Close$/i })
-    .click()
-    .catch(() => {});
-  // Small wait to ensure modal is dismissed
-  await page.waitForTimeout(500);
+  // Close sync-complete modal if it appeared
+  const closeButton = page.getByRole('button', { name: /^Close$/i }).first();
+  if (await closeButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await closeButton.click();
+    // Wait for the modal backdrop to disappear
+    await page
+      .locator('div.fixed.inset-0')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {});
+  }
 
   // Second sync, identical selection
   await page.getByTestId('sync-button').click();
@@ -68,11 +69,17 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
   await page.getByTestId('confirm-sync-button').click();
   await expect(page.getByTestId('sync-preview-modal')).toBeHidden();
 
-  // Close the sync-complete modal that appears after the second sync
-  await page
-    .getByRole('button', { name: /^Close$/i })
-    .click()
-    .catch(() => {});
+  // Close the sync-complete modal that appears after the second sync if it appeared
+  const closeButton2 = page.getByRole('button', { name: /^Close$/i }).first();
+  if (await closeButton2.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await closeButton2.click();
+    // Wait for the modal backdrop to disappear
+    await page
+      .locator('div.fixed.inset-0')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {});
+  }
 
   // Verify all original files still exist with unchanged mtimes
   // (Files were not rewritten, proving re-sync was a no-op)
