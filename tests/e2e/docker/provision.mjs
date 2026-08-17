@@ -30,9 +30,11 @@ async function req(path, { method = 'GET', body, token } = {}) {
 async function waitForServer() {
   for (let i = 0; i < 120; i++) {
     try {
-      await fetch(`${URL_BASE}/System/Info/Public`).then((r) => {
-        if (!r.ok) throw new Error(String(r.status));
-      });
+      const res = await fetch(`${URL_BASE}/System/Info/Public`);
+      if (!res.ok) throw new Error(String(res.status));
+      const text = await res.text();
+      // Verify response is valid JSON, not "Jellyfin Server is loading" placeholder
+      JSON.parse(text);
       return;
     } catch {
       await sleep(1000);
@@ -74,14 +76,31 @@ async function addLibrary(token) {
 }
 
 async function waitForScan(token, userId) {
+  // Wait for files to be registered
   for (let i = 0; i < 180; i++) {
     const res = await req(`/Items?userId=${userId}&IncludeItemTypes=Audio&Recursive=true&Limit=0`, {
       token,
     });
-    if (res.TotalRecordCount >= LIB.trackCount) return;
+    if (res.TotalRecordCount >= LIB.trackCount) break;
     await sleep(1000);
   }
-  throw new Error(`Library scan never reached ${LIB.trackCount} audio items`);
+
+  // Wait for metadata extraction (artists must be populated)
+  for (let i = 0; i < 180; i++) {
+    const artistRes = await req(`/Artists?userId=${userId}&Limit=0`, { token });
+    if (artistRes.TotalRecordCount >= LIB.artists.length) {
+      // Verify a sample track has extracted metadata (non-empty Artists array)
+      const trackRes = await req(
+        `/Items?userId=${userId}&IncludeItemTypes=Audio&Recursive=true&Limit=1`,
+        { token }
+      );
+      if (trackRes.Items.length > 0 && trackRes.Items[0].Artists && trackRes.Items[0].Artists.length > 0) {
+        return;
+      }
+    }
+    await sleep(1000);
+  }
+  throw new Error(`Library metadata never extracted: expected ${LIB.artists.length} artists, got fewer`);
 }
 
 async function createPlaylist(token, userId) {
