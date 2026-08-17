@@ -20,13 +20,15 @@ export const test = base.extend<AppFixtures>({
   // Electron honours Chromium's --user-data-dir, which relocates
   // app.getPath('userData') and with it jellytunes.db, session.enc and
   // preferences.json. One temp dir per scenario means zero shared state.
-  userDataDir: async (_unused, use) => {
+  // eslint-disable-next-line no-empty-pattern
+  userDataDir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'jt-e2e-userdata-'));
     await use(dir);
     rmSync(dir, { recursive: true, force: true });
   },
 
-  destDir: async (_unused, use) => {
+  // eslint-disable-next-line no-empty-pattern
+  destDir: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'jt-e2e-dest-'));
     await use(dir);
     rmSync(dir, { recursive: true, force: true });
