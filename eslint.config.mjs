@@ -23,7 +23,7 @@ export default tseslint.config(
       '.git/**',
       // Ignore all worktree directories to prevent duplicate linting
       '**/.claude/**',
-      // Ignore JS files in tests directory (cucumber config etc)
+      // Ignore fixture and provisioning scripts in tests directory (generate.mjs, provision.mjs)
       'tests/**/*.js',
       'tests/**/*.mjs',
       // Ignore vitest config files (not part of app source)

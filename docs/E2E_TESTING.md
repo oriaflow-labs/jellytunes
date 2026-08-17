@@ -30,13 +30,35 @@ Jellyfin needs roughly 22 seconds from a cold `up -d` to answer HTTP requests. T
 
 The suite runs 5 scenarios:
 
-| Scenario                   | Status     | Notes                                                                                                                                             |
-| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin                                                                                                    |
-| **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                                                                           |
-| **E3** Re-sync no-op       | ✅ Passing | Known to fail intermittently (~1 in 8 runs) with ~33s signature. Root cause under investigation.                                                  |
-| **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                                                                         |
-| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. Parked as `test.fixme` — see inline comment for what is known and the experiment that would un-park it. |
+| Scenario                   | Status     | Notes                                                                                            |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin                                                   |
+| **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                          |
+| **E3** Re-sync no-op       | ✅ Passing | Known to fail intermittently (~1 in 8 runs) with ~33s signature. Root cause under investigation. |
+| **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                        |
+| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. See "Known Issues" below.                              |
+
+## Known Issues
+
+### E5: Sync Cancellation (Parked)
+
+Clicking the cancel button mid-sync does not reliably prevent all tracks from being written. This is not a narrow timing race:
+
+- **Observed behavior**: With 600-second fixtures, a sync runs roughly 30 seconds. The cancel button was clicked approximately 1 second into the sync, and all three tracks were written anyway.
+- **Wiring is correct**: The cancel path is wired end-to-end and has been traced through:
+  - `useSync.ts:529 handleCancelSync`
+  - → `window.api.cancelSync()`
+  - → `ipcMain.handle('sync:cancel')` at `src/main/index.ts:1209`
+  - → `cancelSync()` at `src/main/index.ts:587`
+  - → `activeSyncCore.cancel()`
+
+  There is no guard that swallows the click, so "the click goes nowhere" is ruled out.
+
+- **Unresolved question**: The next diagnostic step is to run the app with a fixed `--user-data-dir`, capture the logs with electron-log, and check whether the line `Sync cancellation requested` appears. If the line is present and all three tracks were still written, the app received the cancellation request and ignored it — a genuine defect in `activeSyncCore.cancel()`. If the line is absent, the IPC message never arrived — a test-side problem.
+
+- **Unit tests don't catch it either**: The existing unit test at `src/sync/sync.test.ts:899` accepts either outcome (`"should either cancel or complete (race condition)"`), so the unit layer would not catch a broken cancellation.
+
+- **What remains intact**: The full scenario body and all assertions, including the guard that fails when the sync completes before it can be cancelled, are in `tests/e2e/specs/e5-cancel.spec.ts`. Nothing was weakened or omitted — only parked pending the diagnostic result.
 
 ## Test Library
 
