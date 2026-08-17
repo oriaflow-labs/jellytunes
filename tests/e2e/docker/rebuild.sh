@@ -33,7 +33,7 @@ docker cp "$BUILD_NAME:/config" "$DOCKER_DIR/provisioned-config"
 docker cp "$BUILD_NAME:/cache" "$DOCKER_DIR/provisioned-cache"
 
 echo "==> Building final image with provisioned state"
-docker build -t "$TARGET_IMAGE" "$DOCKER_DIR" >/dev/null
+docker build --build-arg JELLYFIN_IMAGE="$JELLYFIN_IMAGE" -t "$TARGET_IMAGE" "$DOCKER_DIR" >/dev/null
 
 echo "==> Done. Start it with:"
 echo "    docker compose -f tests/e2e/docker-compose.yml up -d"
