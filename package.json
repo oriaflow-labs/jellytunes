@@ -29,6 +29,7 @@
     "test:bdd:dev": "pnpm build && TS_NODE_PROJECT=tests/bdd/tsconfig.json cucumber-js --config tests/bdd/cucumber.js --profile dev",
     "test:bdd:ci": "pnpm build && TS_NODE_PROJECT=tests/bdd/tsconfig.json cucumber-js --config tests/bdd/cucumber.js --profile ci",
     "test:bdd:report": "open tests/bdd/reports/cucumber-report.html",
+    "test:e2e": "pnpm build && playwright test --config tests/e2e/playwright.config.ts",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:renderer": "vitest run --config vitest.renderer.config.ts",
