@@ -1,0 +1,11 @@
+{
+  "artists": ["Test Artist A", "Test Artist B", "Test Artist C"],
+  "albums": ["Album Alpha", "Album Beta", "Album Delta", "Album Gamma"],
+  "trackCount": 10,
+  "playlistName": "Test Playlist",
+  "albumAlphaTree": [
+    "music/Test Artist A/Album Alpha/01 - Alpha One.flac",
+    "music/Test Artist A/Album Alpha/02 - Alpha Two.flac",
+    "music/Test Artist A/Album Alpha/03 - Alpha Three.flac"
+  ]
+}

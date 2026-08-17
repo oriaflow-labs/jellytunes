@@ -33,6 +33,7 @@
     "test:unit:watch": "vitest",
     "test:renderer": "vitest run --config vitest.renderer.config.ts",
     "test": "pnpm run test:unit",
+    "test:e2e:fixtures": "node tests/e2e/fixtures/generate.mjs",
     "postinstall": "electron-builder install-app-deps",
     "build-icon": "node scripts/build-icon.mjs",
     "release": "bash scripts/release.sh"
