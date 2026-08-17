@@ -66,6 +66,7 @@
     "@cucumber/pretty-formatter": "^1.0.1",
     "@electron/rebuild": "^4.0.3",
     "@eslint/js": "^9.19.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@playwright/test": "^1.40.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
