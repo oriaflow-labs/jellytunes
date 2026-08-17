@@ -57,7 +57,7 @@ export async function assertServerReachable(): Promise<void> {
         containerNotRunning = true;
       }
     }
-    await new Promise((r) => setTimeout(r, 1000));
+    if (i < 59) await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Provide targeted error message based on failure type
