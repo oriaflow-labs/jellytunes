@@ -56,10 +56,23 @@ export { expect } from '@playwright/test';
 export async function login(page: Page): Promise<void> {
   const { url, apiKey } = readServerConfig();
   await page.getByTestId('auth-screen').waitFor({ state: 'visible', timeout: 30_000 });
-  await page.getByTestId('server-url-input').fill(url);
-  await page.getByTestId('api-key-input').fill(apiKey);
-  await page.getByTestId('connect-button').click();
 
+  // Fill inputs with explicit waits
+  const urlInput = page.getByTestId('server-url-input');
+  const apiKeyInput = page.getByTestId('api-key-input');
+
+  await urlInput.waitFor({ state: 'visible', timeout: 5000 });
+  await urlInput.fill(url);
+
+  await apiKeyInput.waitFor({ state: 'visible', timeout: 5000 });
+  await apiKeyInput.fill(apiKey);
+
+  // Click the connect button
+  const connectButton = page.getByTestId('connect-button');
+  await connectButton.waitFor({ state: 'visible', timeout: 5000 });
+  await connectButton.click();
+
+  // Wait for either user selector or library content
   const userSelectorAppeared = await page
     .getByTestId('user-selector-screen')
     .waitFor({ state: 'visible', timeout: 5000 })
@@ -67,8 +80,11 @@ export async function login(page: Page): Promise<void> {
     .catch(() => false);
 
   if (userSelectorAppeared) {
-    await page.getByTestId('user-option').first().click();
+    const userOption = page.getByTestId('user-option').first();
+    await userOption.waitFor({ state: 'visible', timeout: 5000 });
+    await userOption.click();
   }
 
+  // Wait for the library to load
   await page.getByTestId('library-content').waitFor({ state: 'visible', timeout: 30_000 });
 }
