@@ -35,19 +35,18 @@ export async function assertServerReachable(): Promise<void> {
       const res = await fetch(`${url}/System/Info`, { headers: { 'X-Emby-Token': apiKey } });
       if (!res.ok) {
         lastError = `HTTP ${res.status}`;
-        continue;
-      }
-
-      // Verify response body is valid JSON (not the "Server is loading" placeholder)
-      const text = await res.text();
-      try {
-        JSON.parse(text);
-        // Successfully parsed JSON — server is ready
-        return;
-      } catch {
-        // Server returned 200 but body is not JSON — still loading
-        lastError = 'server booting (loading placeholder returned)';
-        continue;
+        // Don't continue early, continue normally with sleep
+      } else {
+        // Verify response body is valid JSON (not the "Server is loading" placeholder)
+        const text = await res.text();
+        try {
+          JSON.parse(text);
+          // Successfully parsed JSON — server is ready
+          return;
+        } catch {
+          // Server returned 200 but body is not JSON — still loading
+          lastError = 'server booting (loading placeholder returned)';
+        }
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -57,7 +56,8 @@ export async function assertServerReachable(): Promise<void> {
         containerNotRunning = true;
       }
     }
-    if (i < 59) await new Promise((r) => setTimeout(r, 1000));
+    // Sleep after each attempt (including the last one for consistency)
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Provide targeted error message based on failure type
