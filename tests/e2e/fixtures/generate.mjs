@@ -114,7 +114,7 @@ export const TRACKS = [
 function sourceArgs(track, index) {
   // seed is fixed so white noise is byte-reproducible across runs
   return track.kind === 'noise'
-    ? ['-f', 'lavfi', '-i', `anoisesrc=seed=${42 + index}:duration=600:sample_rate=44100`]
+    ? ['-f', 'lavfi', '-i', `anoisesrc=seed=${42 + index}:duration=120:sample_rate=44100`]
     : ['-f', 'lavfi', '-i', `sine=frequency=${220 + index * 20}:duration=2:sample_rate=44100`];
 }
 
