@@ -1,11 +1,22 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Page } from '@playwright/test';
 import { test, expect, login } from '../support/app';
 import { addDestination, listTree, selectAlbum } from '../support/actions';
 
 const library = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'library.json'), 'utf8'),
 ) as { albumAlphaTree: string[] };
+
+async function closeSyncCompleteModal(page: Page): Promise<void> {
+  const closeButton = page.getByRole('button', { name: /^Close$/i }).first();
+  // The success modal is genuinely optional, so absence is not a failure.
+  if (!(await closeButton.isVisible())) return;
+  await closeButton.click();
+  // Wait for the close button to disappear, indicating the modal has been dismissed.
+  // Use longer timeout to account for animation and UI state updates on loaded machines.
+  await closeButton.waitFor({ state: 'hidden', timeout: 15000 });
+}
 
 test('E3: re-syncing the same selection copies nothing and leaves files untouched', async ({
   page,
@@ -46,17 +57,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
       mtimeMs: statSync(join(destDir, rel)).mtimeMs,
     }));
 
-  // Close sync-complete modal if it appeared
-  const closeButton = page.getByRole('button', { name: /^Close$/i }).first();
-  if (await closeButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await closeButton.click();
-    // Wait for the modal backdrop to disappear
-    await page
-      .locator('div.fixed.inset-0')
-      .first()
-      .waitFor({ state: 'hidden', timeout: 5000 })
-      .catch(() => {});
-  }
+  await closeSyncCompleteModal(page);
 
   // Second sync, identical selection
   await page.getByTestId('sync-button').click();
@@ -69,17 +70,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
   await page.getByTestId('confirm-sync-button').click();
   await expect(page.getByTestId('sync-preview-modal')).toBeHidden();
 
-  // Close the sync-complete modal that appears after the second sync if it appeared
-  const closeButton2 = page.getByRole('button', { name: /^Close$/i }).first();
-  if (await closeButton2.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await closeButton2.click();
-    // Wait for the modal backdrop to disappear
-    await page
-      .locator('div.fixed.inset-0')
-      .first()
-      .waitFor({ state: 'hidden', timeout: 5000 })
-      .catch(() => {});
-  }
+  await closeSyncCompleteModal(page);
 
   // Verify all original files still exist with unchanged mtimes
   // (Files were not rewritten, proving re-sync was a no-op)
