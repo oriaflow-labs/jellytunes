@@ -1,8 +1,18 @@
 import { execFileSync } from 'node:child_process';
+import { chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import ffprobe from '@ffprobe-installer/ffprobe';
 import { test, expect, login } from '../support/app';
 import { addDestination, listTree, selectAlbum } from '../support/actions';
+
+/**
+ * @ffprobe-installer publishes its binary as mode 644 (unlike @ffmpeg-installer),
+ * so a fresh install leaves it non-executable. Repair it once, idempotently.
+ */
+function ensureFfprobeExecutable(): void {
+  const mode = statSync(ffprobe.path).mode;
+  if ((mode & 0o111) === 0) chmodSync(ffprobe.path, 0o755);
+}
 
 function codecOf(file: string): string {
   return execFileSync(ffprobe.path, [
@@ -19,6 +29,10 @@ function codecOf(file: string): string {
     .toString()
     .trim();
 }
+
+test.beforeAll(() => {
+  ensureFfprobeExecutable();
+});
 
 test('E4: the MP3 toggle converts FLAC sources to playable MP3', async ({ page, app, destDir }) => {
   await login(page);
