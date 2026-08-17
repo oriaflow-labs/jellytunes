@@ -17,6 +17,12 @@
     "music/Various Artists/Album Delta/01 - Delta One.mp3",
     "music/Various Artists/Album Delta/02 - Delta Two.mp3"
   ],
+  "tabCounts": {
+    "artists": 3,
+    "albumArtists": 3,
+    "albums": 4,
+    "playlists": 1
+  },
   "playlistTree": [
     "Test Playlist.m3u8",
     "music/Test Artist A/Album Alpha/01 - Alpha One.flac",
