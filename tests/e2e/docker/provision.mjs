@@ -92,15 +92,21 @@ async function waitForScan(token, userId) {
       // Verify a sample track has extracted metadata (non-empty Artists array)
       const trackRes = await req(
         `/Items?userId=${userId}&IncludeItemTypes=Audio&Recursive=true&Limit=1`,
-        { token }
+        { token },
       );
-      if (trackRes.Items.length > 0 && trackRes.Items[0].Artists && trackRes.Items[0].Artists.length > 0) {
+      if (
+        trackRes.Items.length > 0 &&
+        trackRes.Items[0].Artists &&
+        trackRes.Items[0].Artists.length > 0
+      ) {
         return;
       }
     }
     await sleep(1000);
   }
-  throw new Error(`Library metadata never extracted: expected ${LIB.artists.length} artists, got fewer`);
+  throw new Error(
+    `Library metadata never extracted: expected ${LIB.artists.length} artists, got fewer`,
+  );
 }
 
 async function createPlaylist(token, userId) {

@@ -171,8 +171,7 @@ pnpm typecheck        # TypeScript type checking
 # Testing
 pnpm test             # Unit tests (Vitest)
 pnpm test:unit:watch  # Unit tests in watch mode
-pnpm test:bdd         # BDD tests headless (Cucumber + Playwright)
-pnpm test:bdd:dev     # BDD tests with visible UI
+pnpm test:e2e         # E2E tests with Playwright (see docs/E2E_TESTING.md)
 
 # Packaging
 pnpm package          # Build + create installers

@@ -17,8 +17,7 @@ pnpm typecheck        # TypeScript type checking
 # Testing
 pnpm test             # Run unit tests (Vitest)
 pnpm test:unit:watch  # Unit tests in watch mode
-pnpm test:bdd         # BDD tests headless (Cucumber + Playwright)
-pnpm test:bdd:dev     # BDD tests with visible UI
+pnpm test:e2e         # E2E tests with Playwright
 
 # Packaging
 pnpm package          # Build + create installers
@@ -77,6 +76,7 @@ There is no changelog or "what's new" field in snapcraft.yaml, and the store lis
 ## Testing Strategy
 
 - **Unit tests** live alongside source in `src/sync/*.test.ts` and also in `tests/unit/`
-- **BDD tests** use Cucumber + Playwright in `tests/bdd/` — feature files in `tests/bdd/features/`, step definitions in `tests/bdd/steps/`
-- BDD HTML reports are generated at `tests/bdd/reports/cucumber-report.html`
+- **E2E tests** use Playwright in `tests/e2e/` — specs in `tests/e2e/specs/`, harness in `tests/e2e/support/`
+- E2E runs against a containerised Jellyfin and is local-only, never a CI gate. See `docs/E2E_TESTING.md`
+- E2E fixtures and `tests/e2e/.server.json` are generated, not committed
 - Unit tests run on `ubuntu-latest` **and `windows-latest`** (`checks.yml`), never on macOS. Guard any assertion about POSIX-only properties (execute bits, path separators, symlinks) behind a platform check, even when the test describes macOS or Linux behaviour. An execute bit, for example, lives in the git index as mode `100755`; on NTFS `statSync().mode & 0o111` is always `0`.
