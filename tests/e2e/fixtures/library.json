@@ -8,6 +8,15 @@
     "music/Test Artist A/Album Alpha/02 - Alpha Two.flac",
     "music/Test Artist A/Album Alpha/03 - Alpha Three.flac"
   ],
+  "albumGammaTree": [
+    "music/Test Artist B/Album Gamma/01 - Gamma One.flac",
+    "music/Test Artist B/Album Gamma/02 - Gamma Two.flac",
+    "music/Test Artist B/Album Gamma/03 - Gamma Three.flac"
+  ],
+  "albumDeltaTree": [
+    "music/Various Artists/Album Delta/01 - Delta One.mp3",
+    "music/Various Artists/Album Delta/02 - Delta Two.mp3"
+  ],
   "playlistTree": [
     "Test Playlist.m3u8",
     "music/Test Artist A/Album Alpha/01 - Alpha One.flac",
