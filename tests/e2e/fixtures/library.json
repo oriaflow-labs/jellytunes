@@ -7,5 +7,11 @@
     "music/Test Artist A/Album Alpha/01 - Alpha One.flac",
     "music/Test Artist A/Album Alpha/02 - Alpha Two.flac",
     "music/Test Artist A/Album Alpha/03 - Alpha Three.flac"
+  ],
+  "playlistTree": [
+    "Test Playlist.m3u8",
+    "music/Test Artist A/Album Alpha/01 - Alpha One.flac",
+    "music/Test Artist A/Album Beta/01 - Beta One.mp3",
+    "music/Various Artists/Album Delta/01 - Delta One.mp3"
   ]
 }
