@@ -59,6 +59,9 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
 
   await closeSyncCompleteModal(page);
 
+  // Ensure sync-panel is ready before attempting second sync
+  await page.getByTestId('sync-panel').waitFor({ state: 'visible', timeout: 15_000 });
+
   // Second sync, identical selection
   await page.getByTestId('sync-button').click();
   await page.getByTestId('sync-preview-modal').waitFor({ state: 'visible', timeout: 20_000 });
