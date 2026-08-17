@@ -28,7 +28,7 @@ Jellyfin needs roughly 22 seconds from a cold `up -d` to answer HTTP requests. T
 
 ## Test Status
 
-The suite runs 5 scenarios:
+The suite runs 9 scenarios (13 Playwright tests):
 
 | Scenario                   | Status     | Notes                                                                                            |
 | -------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
@@ -36,7 +36,13 @@ The suite runs 5 scenarios:
 | **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                          |
 | **E3** Re-sync no-op       | ✅ Passing | Known to fail intermittently (~1 in 8 runs) with ~33s signature. Root cause under investigation. |
 | **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                        |
-| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. See "Known Issues" below.                              |
+| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. Tracked by ORAIN-0671.                                 |
+| **E6** Playlist sync       | ✅ Passing | Asserts the tracks and the generated `.m3u8` index, including that its entries resolve on disk   |
+| **E7** Deselect & remove   | ✅ Passing | Exercises the delete-only preview branch and asserts the destination ends empty                  |
+| **E8** Metadata layout     | ✅ Passing | Untagged album (`AlbumId`→`MusicAlbum`) and compilation folder placement — 2 tests               |
+| **E9** Navigation          | ✅ Passing | Tabs, server-side search and select-all — 4 tests, no sync, fastest in the suite                 |
+
+The select-all confirmation dialog (`select-all-confirm-dialog`) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
 
 ## Known Issues
 
