@@ -7,7 +7,10 @@ test-*
 **/.DS_Store
 electron.vite.config.*.mjs
 .claude/
+# ByteRover: el arbol vive en ~/workspace/.brv. El puntero .brv SI se versiona
+# para que 'brv worktree add' llegue a cada git worktree nuevo.
 .brv/
+.brv-backup/
 .opencode/
 .eslintcache
 coverage/
