@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  primeRenderAuthContext,
-  _resetRenderAuthContextForTests,
-} from './authContext';
+import { primeRenderAuthContext, _resetRenderAuthContextForTests } from './authContext';
 import { jellyfinHeaders } from './jellyfin';
 
 describe('jellyfinHeaders (ORAIN-0562)', () => {
@@ -23,11 +20,11 @@ describe('jellyfinHeaders (ORAIN-0562)', () => {
     expect(headers['X-MediaBrowser-Token']).toBeUndefined();
   });
 
-  it('emits Authorization: MediaBrowser Token="<key>"', async () => {
+  it('emits MediaBrowser Token="<key>" (value only, no Authorization: prefix)', async () => {
     await primeRenderAuthContext();
     const headers = jellyfinHeaders('test-key');
     expect(headers.Authorization).toBe(
-      'Authorization: MediaBrowser Token="test-key", Client="JellyTunes", Device="JellyTunes Desktop", DeviceId="deadbeef-1234-4567-89ab-cdef01234567", Version="0.6.0"',
+      'MediaBrowser Token="test-key", Client="JellyTunes", Device="JellyTunes Desktop", DeviceId="deadbeef-1234-4567-89ab-cdef01234567", Version="0.6.0"',
     );
   });
 

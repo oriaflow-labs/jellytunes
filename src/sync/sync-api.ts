@@ -208,9 +208,7 @@ class SyncApiImpl implements SyncApi {
    * but still legal).
    */
   private getAuthHeaders(): Record<string, string> {
-    const input = this.identity
-      ? { ...this.identity, token: this.apiKey }
-      : { token: this.apiKey };
+    const input = this.identity ? { ...this.identity, token: this.apiKey } : { token: this.apiKey };
     return {
       Authorization: buildAuthHeader(input),
     };

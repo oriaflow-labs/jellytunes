@@ -64,13 +64,11 @@ export function getRenderAuthContext(): RenderAuthContext {
   if (cachedContext) return cachedContext;
   // Return a single stable temp context for the whole session (not a fresh
   // random id per call) so Jellyfin sees at most one temp device.
-  if (!tempContext) {
-    tempContext = {
-      deviceId: `${TEMP_DEVICE_PREFIX}${randomToken()}`,
-      version: '0.0.0',
-      device: guessDeviceName(),
-    };
-  }
+  tempContext ??= {
+    deviceId: `${TEMP_DEVICE_PREFIX}${randomToken()}`,
+    version: '0.0.0',
+    device: guessDeviceName(),
+  };
   return tempContext;
 }
 

@@ -37,9 +37,7 @@ afterEach(() => {
 describe('getOrCreateDeviceId', () => {
   it('creates a UUID v4 and writes it to disk on first call', () => {
     const id = getOrCreateDeviceId();
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     const onDisk = fs.readFileSync(path.join(tmpDir, 'device-id.txt'), 'utf-8');
     expect(onDisk).toBe(id);
   });
@@ -71,9 +69,7 @@ describe('getOrCreateDeviceId', () => {
     fs.writeFileSync(path.join(tmpDir, 'device-id.txt'), 'not-a-uuid', 'utf-8');
     resetDeviceIdCacheForTests();
     const id = getOrCreateDeviceId();
-    expect(id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     expect(id).not.toBe('not-a-uuid');
   });
 });

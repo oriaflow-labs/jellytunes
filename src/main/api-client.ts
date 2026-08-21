@@ -23,6 +23,8 @@ function identity(): ApiIdentity {
   };
 }
 
-export function createMainApiClient(config: Omit<ApiClientConfig, 'identity'>): ReturnType<typeof createApiClient> {
+export function createMainApiClient(
+  config: Omit<ApiClientConfig, 'identity'>,
+): ReturnType<typeof createApiClient> {
   return createApiClient({ ...config, identity: identity() });
 }

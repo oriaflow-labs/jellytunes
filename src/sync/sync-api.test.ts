@@ -1238,10 +1238,10 @@ describe('sync-api', () => {
 });
 
 // ORAIN-0562: the legacy `X-Emby-Token` / `X-MediaBrowser-Token` pair must be
-// gone, and the new `Authorization: MediaBrowser Token="..."` header must
+// gone, and the new `MediaBrowser Token="..."` (as Authorization value) header must
 // appear on every request the API client makes.
 describe('auth header (ORAIN-0562)', () => {
-  it('emits Authorization: MediaBrowser Token="<key>" and drops the legacy headers', async () => {
+  it('emits MediaBrowser Token="<key>" (value only) and drops the legacy headers', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ Items: [] }),
@@ -1265,7 +1265,7 @@ describe('auth header (ORAIN-0562)', () => {
     expect(headers['X-Emby-Token']).toBeUndefined();
     expect(headers['X-MediaBrowser-Token']).toBeUndefined();
     expect(headers.Authorization).toBe(
-      'Authorization: MediaBrowser Token="k-123", Client="JellyTunes", Device="laptop", DeviceId="device-1", Version="0.6.0"',
+      'MediaBrowser Token="k-123", Client="JellyTunes", Device="laptop", DeviceId="device-1", Version="0.6.0"',
     );
   });
 
@@ -1283,6 +1283,6 @@ describe('auth header (ORAIN-0562)', () => {
     await api.getAlbumTracks('album-y');
     const init = mockFetch.mock.calls[0]?.[1];
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Authorization: MediaBrowser Token="k-only"');
+    expect(headers.Authorization).toBe('MediaBrowser Token="k-only"');
   });
 });

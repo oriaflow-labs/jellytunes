@@ -3,7 +3,7 @@
  *
  * ORAIN-0562: Jellyfin is removing legacy `X-Emby-Token` / `X-MediaBrowser-Token`
  * headers. Every authenticated request must use
- *   Authorization: MediaBrowser Token="...", Client="...", Device="...", DeviceId="...", Version="..."
+ *   MediaBrowser Token="...", Client="...", Device="...", DeviceId="...", Version="..."
  * `Token` is the only mandatory field; the rest identify the app on the
  * server's dashboard. Only `DeviceId` must be stable across launches — a fresh
  * value on every boot would create a phantom device per launch on the server's
@@ -32,7 +32,7 @@ export interface BuildAuthHeaderInput {
 /**
  * Build a single `Authorization` header value for Jellyfin.
  *
- * Format: `Authorization: MediaBrowser Token="<token>"[, Field="<value>"]...`
+ * Format: `MediaBrowser Token="<token>"[, Field="<value>"]...`
  * Fields with empty/omitted values are skipped — emitting `DeviceId=""` would
  * create a phantom device on the server's dashboard.
  */
@@ -52,7 +52,7 @@ export function buildAuthHeader(input: BuildAuthHeaderInput): string {
   if (input.deviceId) parts.push(`DeviceId="${sanitizeValue(input.deviceId)}"`);
   if (input.version) parts.push(`Version="${sanitizeValue(input.version)}"`);
 
-  return `Authorization: MediaBrowser ${parts.join(', ')}`;
+  return `MediaBrowser ${parts.join(', ')}`;
 }
 
 /**
@@ -84,7 +84,7 @@ export interface ParsedAuthHeader {
  * or wrong prefix).
  */
 export function parseAuthHeader(header: string): ParsedAuthHeader | null {
-  const prefix = 'Authorization: MediaBrowser ';
+  const prefix = 'MediaBrowser ';
   if (!header.startsWith(prefix)) return null;
 
   const body = header.slice(prefix.length);

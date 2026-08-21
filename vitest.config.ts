@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       'src/sync/**/*.test.ts',
       'src/main/**/*.test.ts',
+      'src/shared/**/*.test.ts',
       'tests/unit/**/*.test.ts',
       'src/renderer/**/*.test.tsx',
       'src/renderer/**/*.test.ts',
@@ -25,6 +26,8 @@ export default defineConfig({
       ['src/sync/**/*.test.ts', 'node'],
       // main process tests - pure Node, no DOM needed
       ['src/main/**/*.test.ts', 'node'],
+      // shared helpers - pure Node, no DOM needed
+      ['src/shared/**/*.test.ts', 'node'],
       // unit tests - mostly pure logic, no DOM needed
       ['tests/unit/**/*.test.ts', 'node'],
     ],

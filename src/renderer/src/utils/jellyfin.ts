@@ -17,7 +17,7 @@ export const PAGE_SIZE = 50;
  */
 export function jellyfinHeaders(apiKey: string): Record<string, string> {
   return {
-    Authorization: getAuthorizationHeader(apiKey),
+    'Authorization': getAuthorizationHeader(apiKey),
     'Content-Type': 'application/json',
   };
 }
