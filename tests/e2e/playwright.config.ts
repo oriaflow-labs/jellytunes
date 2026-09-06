@@ -16,7 +16,11 @@ export default defineConfig({
   projects: [
     {
       name: 'jellyfin-v11',
-      use: { baseURL: 'http://127.0.0.1:8096' },
+      use: {
+        baseURL: 'http://127.0.0.1:8096',
+        jellyfinVersion: 'v11',
+        jellyfinExpectedMajor: 10,
+      },
       webServer: {
         command: 'docker compose -f docker-compose.v11.yml up --wait',
         url: 'http://127.0.0.1:8096/System/Info/Public',
@@ -33,7 +37,11 @@ export default defineConfig({
     },
     {
       name: 'jellyfin-v12',
-      use: { baseURL: 'http://127.0.0.1:8097' },
+      use: {
+        baseURL: 'http://127.0.0.1:8097',
+        jellyfinVersion: 'v12',
+        jellyfinExpectedMajor: 12,
+      },
       webServer: {
         command: 'docker compose -f docker-compose.v12.yml up --wait',
         url: 'http://127.0.0.1:8097/System/Info/Public',

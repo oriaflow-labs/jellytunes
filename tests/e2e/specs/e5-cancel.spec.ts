@@ -26,10 +26,11 @@ test.fixme('E5: cancelling a sync leaves no partial files and no temp orphans', 
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
   const strayBefore = new Set(strayTempFiles());
 
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   // Select Album Gamma (3×600s noise for a reliable cancel window)

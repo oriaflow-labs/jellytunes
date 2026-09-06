@@ -22,8 +22,9 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
   await selectAlbum(page, 'Album Alpha');
 

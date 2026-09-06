@@ -1,6 +1,13 @@
 import { writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  buildAuthHeader,
+  AUTH_CLIENT,
+  AUTH_DEVICE,
+  AUTH_DEVICE_ID,
+  AUTH_VERSION,
+} from '../support/auth-headers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'library.json'), 'utf8'));
@@ -11,15 +18,22 @@ const OUT_FILE = VERSION
   : join(HERE, '..', '.server.json');
 const USER = 'e2e';
 const PASS = 'e2e-password';
-const AUTH_HEADER =
-  'MediaBrowser Client="jellytunes-e2e", Device="ci", DeviceId="jellytunes-e2e", Version="1.0.0"';
+// Identifies the e2e harness on Jellyfin's active-devices dashboard.
+// Stable per host so re-provisions don't register a new phantom device.
+const CLIENT_META = {
+  client: AUTH_CLIENT,
+  device: AUTH_DEVICE,
+  deviceId: AUTH_DEVICE_ID,
+  version: AUTH_VERSION,
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function req(path, { method = 'GET', body, token } = {}) {
-  const headers = { 'X-Emby-Authorization': AUTH_HEADER };
+  const headers = {
+    Authorization: buildAuthHeader({ token, ...CLIENT_META }),
+  };
   if (body) headers['Content-Type'] = 'application/json';
-  if (token) headers['X-Emby-Token'] = token;
   const res = await fetch(`${URL_BASE}${path}`, {
     method,
     headers,
@@ -31,14 +45,19 @@ async function req(path, { method = 'GET', body, token } = {}) {
 }
 
 async function waitForServer() {
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 180; i++) {
     try {
       const res = await fetch(`${URL_BASE}/System/Info/Public`);
       if (!res.ok) throw new Error(String(res.status));
       const text = await res.text();
       // Verify response is valid JSON, not "Jellyfin Server is loading" placeholder
       JSON.parse(text);
-      return;
+      // /Startup/Configuration without auth returns 401 once the wizard is
+      // open, and 503 while the server is still bootstrapping (notably v12
+      // runs schema migrations on first boot). Wait until we get anything
+      // but 503 before declaring the server ready.
+      const wizard = await fetch(`${URL_BASE}/Startup/Configuration`);
+      if (wizard.status !== 503) return;
     } catch {
       await sleep(1000);
     }
@@ -141,5 +160,18 @@ await waitForScan(token, userId);
 await createPlaylist(token, userId);
 const apiKey = await createApiKey(token);
 
-writeFileSync(OUT_FILE, `${JSON.stringify({ url: URL_BASE, apiKey, userId }, null, 2)}\n`);
-console.log(`Provisioned. Wrote ${OUT_FILE}`);
+// The throwaway build container listens on its internal port (8096), but the
+// per-version docker-compose file maps a different host port (e.g. v12 maps
+// 8097:8096). Provision against the internal port so requests reach the API
+// inside the container, then rewrite the URL written to .server.<v>.json to
+// the host port the compose file will expose — that's the address the test
+// runner will hit when it boots the final image.
+const FINAL_URL = (() => {
+  if (!VERSION) return URL_BASE;
+  if (VERSION === 'v11') return 'http://127.0.0.1:8096';
+  if (VERSION === 'v12') return 'http://127.0.0.1:8097';
+  return URL_BASE;
+})();
+
+writeFileSync(OUT_FILE, `${JSON.stringify({ url: FINAL_URL, apiKey, userId }, null, 2)}\n`);
+console.log(`Provisioned. Wrote ${OUT_FILE} (provisioned via ${URL_BASE}, final URL ${FINAL_URL})`);

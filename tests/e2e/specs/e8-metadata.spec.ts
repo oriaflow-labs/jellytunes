@@ -11,8 +11,9 @@ test('E8a: an album whose tracks carry no ALBUM tag syncs to its server folder',
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   // Album Gamma's files have no ALBUM tag; Jellyfin resolves the album through
@@ -30,8 +31,9 @@ test('E8b: a compilation syncs under its album artist, not its track artists', a
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   // Album Delta credits Test Artist A and Test Artist C on its tracks but

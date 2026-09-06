@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { buildAuthHeader } from './auth-headers';
 
 export interface ServerConfig {
   url: string;
@@ -37,13 +38,14 @@ export function readServerConfig(version?: string): ServerConfig {
 
 export async function assertServerReachable(version?: string): Promise<void> {
   const { url, apiKey } = readServerConfig(version);
+  const auth = { Authorization: buildAuthHeader({ token: apiKey }) };
   let lastError = 'no attempt made';
   let containerNotRunning = false;
 
   // Poll for 60 seconds (comfortably exceeds Jellyfin's ~22s startup time)
   for (let i = 0; i < 60; i++) {
     try {
-      const res = await fetch(`${url}/System/Info`, { headers: { 'X-Emby-Token': apiKey } });
+      const res = await fetch(`${url}/System/Info`, { headers: auth });
       if (!res.ok) {
         lastError = `HTTP ${res.status}`;
         // Don't continue early, continue normally with sleep
@@ -92,7 +94,7 @@ export async function assertServerReachable(version?: string): Promise<void> {
  */
 export async function assertMediaDownloadable(version?: string): Promise<void> {
   const { url, apiKey } = readServerConfig(version);
-  const auth = { 'X-Emby-Token': apiKey };
+  const auth = { Authorization: buildAuthHeader({ token: apiKey }) };
 
   const listRes = await fetch(`${url}/Items?IncludeItemTypes=Audio&Recursive=true&Limit=1`, {
     headers: auth,
@@ -121,18 +123,74 @@ export async function assertMediaDownloadable(version?: string): Promise<void> {
 export async function assertServerMajor(version: string, expected: number): Promise<void> {
   const { url, apiKey } = readServerConfig(version);
   const res = await fetch(`${url}/System/Info`, {
-    headers: { 'X-Emby-Token': apiKey },
+    headers: { Authorization: buildAuthHeader({ token: apiKey }) },
   });
   if (!res.ok) {
     throw new Error(`Could not read /System/Info (HTTP ${res.status}) at ${url}.`);
   }
-  const info = (await res.json()) as { ServerVersion?: string };
-  const majorStr = (info.ServerVersion ?? '').split('.')[0];
+  // Jellyfin 10.10.x ships the version as `Version`; older builds used
+  // `ServerVersion`. Read whichever the server sends so we cover both.
+  const info = (await res.json()) as { Version?: string; ServerVersion?: string };
+  const majorStr = (info.Version ?? info.ServerVersion ?? '').split('.')[0];
   const major = Number.parseInt(majorStr, 10);
   if (!Number.isFinite(major) || major !== expected) {
     throw new Error(
-      `Wrong Jellyfin major for project ${version}: expected ${expected}, got ${info.ServerVersion ?? '(missing)'}. ` +
+      `Wrong Jellyfin major for project ${version}: expected ${expected}, got ${info.Version ?? info.ServerVersion ?? '(missing)'}. ` +
         `Did you edit docker-compose.${version}.yml to point at the wrong image?`,
     );
   }
+}
+
+/**
+ * Resolve which Jellyfin version the runner is targeting.
+ *
+ * Reads `process.argv` for `--project=...` and looks the project up in
+ * `config.projects`. Prefers the project's declared `use.jellyfinVersion`;
+ * falls back to `process.env.JELLYFIN_VERSION` so manual debug runs (no
+ * `--project` flag, env exported in the shell) keep working.
+ *
+ * Returns `null` when nothing can be determined — the caller can then decide
+ * to skip the preflight (multi-project run) or refuse to proceed.
+ */
+export type ResolvedTarget = {
+  version: 'v11' | 'v12';
+  expectedMajor: number;
+};
+
+export function resolveProjectTarget(
+  config: {
+    projects: Array<{
+      name: string;
+      use?: { jellyfinVersion?: string; jellyfinExpectedMajor?: number };
+    }>;
+  },
+  argv: readonly string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedTarget | null {
+  const projectArgs = argv.filter((a) => a.startsWith('--project='));
+  // Multiple --project flags means multi-project run; per-project preflight
+  // happens lazily in each fixture, so globalSetup does nothing here.
+  if (projectArgs.length === 0) {
+    const v = env.JELLYFIN_VERSION;
+    if (v === 'v11' || v === 'v12') {
+      return {
+        version: v,
+        expectedMajor:
+          Number.parseInt(env.JELLYFIN_EXPECTED_MAJOR ?? '', 10) || (v === 'v11' ? 10 : 12),
+      };
+    }
+    return null;
+  }
+  if (projectArgs.length > 1) {
+    return null;
+  }
+  const projectName = projectArgs[0].slice('--project='.length);
+  const project = config.projects.find((p) => p.name === projectName);
+  if (!project?.use?.jellyfinVersion) return null;
+  const version = project.use.jellyfinVersion;
+  if (version !== 'v11' && version !== 'v12') return null;
+  return {
+    version,
+    expectedMajor: project.use.jellyfinExpectedMajor ?? (version === 'v11' ? 10 : 12),
+  };
 }

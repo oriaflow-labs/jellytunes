@@ -7,8 +7,11 @@ const library = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'library.json'), 'utf8'),
 ) as { tabCounts: Record<'artists' | 'albumArtists' | 'albums' | 'playlists', number> };
 
-test('E9a: every populated library tab renders the expected item count', async ({ page }) => {
-  await login(page);
+test('E9a: every populated library tab renders the expected item count', async ({
+  page,
+  serverConfig,
+}) => {
+  await login(page, serverConfig);
 
   for (const [tab, count] of Object.entries(library.tabCounts)) {
     await page.getByTestId(`tab-${tab}`).click();
@@ -23,8 +26,11 @@ test('E9a: every populated library tab renders the expected item count', async (
   await expect(page.getByTestId('library-item')).toHaveCount(library.tabCounts.albums);
 });
 
-test('E9b: search narrows the album list and clearing it restores the list', async ({ page }) => {
-  await login(page);
+test('E9b: search narrows the album list and clearing it restores the list', async ({
+  page,
+  serverConfig,
+}) => {
+  await login(page, serverConfig);
   await page.getByTestId('tab-albums').click();
   await expect(page.getByTestId('library-item')).toHaveCount(library.tabCounts.albums);
 
@@ -37,8 +43,8 @@ test('E9b: search narrows the album list and clearing it restores the list', asy
   await expect(page.getByTestId('library-item')).toHaveCount(library.tabCounts.albums);
 });
 
-test('E9c: select all does nothing without an active device', async ({ page }) => {
-  await login(page);
+test('E9c: select all does nothing without an active device', async ({ page, serverConfig }) => {
+  await login(page, serverConfig);
   await page.getByTestId('tab-albums').click();
   await expect(page.getByTestId('library-item')).toHaveCount(library.tabCounts.albums);
 
@@ -51,8 +57,13 @@ test('E9c: select all does nothing without an active device', async ({ page }) =
   await expect(page.getByTestId('clear-selection-button')).toBeHidden();
 });
 
-test('E9d: select all selects the tab and clear undoes it', async ({ page, app, destDir }) => {
-  await login(page);
+test('E9d: select all selects the tab and clear undoes it', async ({
+  page,
+  app,
+  destDir,
+  serverConfig,
+}) => {
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   await page.getByTestId('tab-albums').click();

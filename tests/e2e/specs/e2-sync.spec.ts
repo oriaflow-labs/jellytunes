@@ -11,8 +11,9 @@ test('E2: syncing an album writes the expected tree to the destination', async (
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   // selectAlbum will switch to library section; we need to switch back to device

@@ -6,8 +6,8 @@ const library = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'library.json'), 'utf8'),
 ) as { artists: string[] };
 
-test('E1: connecting with URL and API key loads the library', async ({ page }) => {
-  await login(page);
+test('E1: connecting with URL and API key loads the library', async ({ page, serverConfig }) => {
+  await login(page, serverConfig);
 
   const items = page.getByTestId('library-item');
   await expect(items).toHaveCount(library.artists.length);

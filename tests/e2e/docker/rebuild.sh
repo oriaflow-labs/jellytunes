@@ -25,7 +25,16 @@ DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MUSIC="$ROOT/tests/e2e/fixtures/music"
 
 export JELLYFIN_VERSION="$VERSION"
-export JELLYFIN_URL="http://127.0.0.1:8096"
+# The throwaway container always listens on 8096 internally, but the compose
+# file maps a different host port for v12 (8097). Provision against the
+# internal port (8096) so the API client inside the container is reachable,
+# but rewrite the host:port written into .server.<v>.json to the one the
+# compose file will expose — otherwise the test runner hits the wrong port.
+case "$VERSION" in
+  v11) PROVISION_URL="http://127.0.0.1:8096" ;;
+  v12) PROVISION_URL="http://127.0.0.1:8096" ;;  # throwaway listens on 8096 internally
+esac
+export JELLYFIN_URL="$PROVISION_URL"
 
 echo "==> Building $TARGET_IMAGE from $JELLYFIN_IMAGE"
 echo "==> Generating fixtures"
@@ -47,6 +56,42 @@ node "$ROOT/tests/e2e/docker/provision.mjs"
 echo "==> Extracting provisioned state"
 docker cp "$BUILD_NAME:/config" "$DOCKER_DIR/provisioned-config"
 docker cp "$BUILD_NAME:/cache" "$DOCKER_DIR/provisioned-cache"
+
+if [ "$VERSION" = "v12" ]; then
+  echo "==> Hardening v12: disabling legacy auth (X-Emby-Token) so the e2e suite"
+  echo "    exercises the modern Authorization: MediaBrowser ... header path."
+  # Jellyfin v12 stores its config under /config/config/system.xml inside the
+  # container. v11 uses /config/system.xml at the top of the volume, but the
+  # rebuild.sh flow copies the entire /config out, so the relative path
+  # inside the extracted tree is "config/system.xml" for v12 and "system.xml"
+  # for v11.
+  for CANDIDATE in "$DOCKER_DIR/provisioned-config/config/system.xml" "$DOCKER_DIR/provisioned-config/system.xml"; do
+    if [ -f "$CANDIDATE" ]; then
+      SYS_XML="$CANDIDATE"
+      break
+    fi
+  done
+  if [ -z "${SYS_XML:-}" ]; then
+    echo "ERROR: system.xml not found under $DOCKER_DIR/provisioned-config/ after provisioning." >&2
+    exit 3
+  fi
+  # Inject <EnableLegacyAuthorization>false</EnableLegacyAuthorization> at
+  # the end of <ServerConfiguration>. If the file doesn't have a closing
+  # </ServerConfiguration>, we append the flag without nesting — Jellyfin's
+  # XML parser tolerates top-level <EnableLegacyAuthorization> and writes
+  # it back into the correct section on next save.
+  if grep -q "<EnableLegacyAuthorization" "$SYS_XML"; then
+    sed -i '' 's|<EnableLegacyAuthorization>[^<]*</EnableLegacyAuthorization>|<EnableLegacyAuthorization>false</EnableLegacyAuthorization>|' "$SYS_XML"
+  else
+    # Inject just before </ServerConfiguration> so the file stays well-formed.
+    # If the closing tag is missing for some reason, append at end-of-file.
+    if grep -q "</ServerConfiguration>" "$SYS_XML"; then
+      sed -i '' 's|</ServerConfiguration>|<EnableLegacyAuthorization>false</EnableLegacyAuthorization></ServerConfiguration>|' "$SYS_XML"
+    else
+      printf '\n<EnableLegacyAuthorization>false</EnableLegacyAuthorization>\n' >> "$SYS_XML"
+    fi
+  fi
+fi
 
 echo "==> Building final image with provisioned state"
 docker build --build-arg JELLYFIN_IMAGE="$JELLYFIN_IMAGE" -t "$TARGET_IMAGE" "$DOCKER_DIR" >/dev/null

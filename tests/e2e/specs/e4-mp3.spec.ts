@@ -34,8 +34,13 @@ test.beforeAll(() => {
   ensureFfprobeExecutable();
 });
 
-test('E4: the MP3 toggle converts FLAC sources to playable MP3', async ({ page, app, destDir }) => {
-  await login(page);
+test('E4: the MP3 toggle converts FLAC sources to playable MP3', async ({
+  page,
+  app,
+  destDir,
+  serverConfig,
+}) => {
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
 
   await selectAlbum(page, 'Album Alpha');

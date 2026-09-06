@@ -16,8 +16,9 @@ test('E6: syncing a playlist writes its tracks and an .m3u8 index', async ({
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
   await selectLibraryItem(page, 'playlists', library.playlistName);
 

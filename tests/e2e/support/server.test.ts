@@ -99,4 +99,76 @@ describe('assertServerMajor', () => {
       globalThis.fetch = origFetch;
     }
   });
+
+  it('accepts Version field (real Jellyfin 10.10.3 returns Version, not ServerVersion)', async () => {
+    process.env.E2E_CONFIG_DIR = tmp;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ Version: '10.10.3' }), { status: 200 })) as typeof fetch;
+    try {
+      const { assertServerMajor } = await import('./server');
+      await expect(assertServerMajor('v11', 10)).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('authenticated requests use MediaBrowser auth header', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'jellytunes-e2e-test-'));
+    writeFileSync(
+      join(tmp, '.server.v11.json'),
+      JSON.stringify({ url: 'http://v11:8096', apiKey: 'k11', userId: 'u11' }),
+    );
+  });
+
+  afterEach(() => rmSync(tmp, { recursive: true }));
+
+  it('assertServerReachable sends Authorization: MediaBrowser Token="<apiKey>"', async () => {
+    process.env.E2E_CONFIG_DIR = tmp;
+    const origFetch = globalThis.fetch;
+    let seenAuthHeader: string | undefined;
+    let seenLegacyHeader: string | null = null;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      seenAuthHeader = headers.get('Authorization') ?? undefined;
+      seenLegacyHeader = headers.get('X-Emby-Token');
+      return new Response(JSON.stringify({ Version: '10.10.3' }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const { assertServerReachable } = await import('./server');
+      await assertServerReachable('v11');
+      expect(seenAuthHeader).toBe('MediaBrowser Token="k11"');
+      expect(seenLegacyHeader).toBeNull();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('assertMediaDownloadable sends Authorization: MediaBrowser Token="<apiKey>"', async () => {
+    process.env.E2E_CONFIG_DIR = tmp;
+    const origFetch = globalThis.fetch;
+    const seenHeaders: Array<string | null> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      seenHeaders.push(headers.get('Authorization'));
+      if (url.includes('/Items?IncludeItemTypes=Audio')) {
+        return new Response(JSON.stringify({ Items: [{ Id: 'track1' }] }), { status: 200 });
+      }
+      // /Items/track1/Download — return 200 with empty body
+      return new Response('', { status: 200 });
+    }) as typeof fetch;
+    try {
+      const { assertMediaDownloadable } = await import('./server');
+      await assertMediaDownloadable('v11');
+      // Both the list and the download calls must use the modern header
+      expect(seenHeaders).toEqual(['MediaBrowser Token="k11"', 'MediaBrowser Token="k11"']);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
 });

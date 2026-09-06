@@ -11,8 +11,9 @@ test('E7: deselecting a synced album removes its files from the destination', as
   page,
   app,
   destDir,
+  serverConfig,
 }) => {
-  await login(page);
+  await login(page, serverConfig);
   await addDestination(page, app, destDir);
   await selectAlbum(page, 'Album Alpha');
 
