@@ -3,9 +3,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT = join(HERE, '..', '.server.json');
 const LIB = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', 'library.json'), 'utf8'));
 const URL_BASE = process.env.JELLYFIN_URL ?? 'http://127.0.0.1:8096';
+const VERSION = process.env.JELLYFIN_VERSION; // e.g. "v11" | "v12" | undefined
+const OUT_FILE = VERSION
+  ? join(HERE, '..', `.server.${VERSION}.json`)
+  : join(HERE, '..', '.server.json');
 const USER = 'e2e';
 const PASS = 'e2e-password';
 const AUTH_HEADER =
@@ -138,5 +141,5 @@ await waitForScan(token, userId);
 await createPlaylist(token, userId);
 const apiKey = await createApiKey(token);
 
-writeFileSync(OUT, `${JSON.stringify({ url: URL_BASE, apiKey, userId }, null, 2)}\n`);
-console.log(`Provisioned. Wrote ${OUT}`);
+writeFileSync(OUT_FILE, `${JSON.stringify({ url: URL_BASE, apiKey, userId }, null, 2)}\n`);
+console.log(`Provisioned. Wrote ${OUT_FILE}`);
