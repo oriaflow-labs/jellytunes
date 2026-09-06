@@ -52,3 +52,51 @@ describe('readServerConfig', () => {
     expect(() => readServerConfig('v11')).toThrow(/rebuild\.sh v11/);
   });
 });
+
+describe('assertServerMajor', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), 'jellytunes-e2e-test-'));
+    writeFileSync(
+      join(tmp, '.server.json'),
+      JSON.stringify({ url: 'http://default:8096', apiKey: 'k', userId: 'u' }),
+    );
+    writeFileSync(
+      join(tmp, '.server.v11.json'),
+      JSON.stringify({ url: 'http://v11:8096', apiKey: 'k11', userId: 'u11' }),
+    );
+    writeFileSync(
+      join(tmp, '.server.v12.json'),
+      JSON.stringify({ url: 'http://v12:8097', apiKey: 'k12', userId: 'u12' }),
+    );
+  });
+
+  afterEach(() => rmSync(tmp, { recursive: true }));
+
+  it('does not throw when major matches', async () => {
+    process.env.E2E_CONFIG_DIR = tmp;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ServerVersion: '10.10.3' }), { status: 200 })) as typeof fetch;
+    try {
+      const { assertServerMajor } = await import('./server');
+      await expect(assertServerMajor('v11', 10)).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('throws when major mismatches', async () => {
+    process.env.E2E_CONFIG_DIR = tmp;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ServerVersion: '10.10.3' }), { status: 200 })) as typeof fetch;
+    try {
+      const { assertServerMajor } = await import('./server');
+      await expect(assertServerMajor('v12', 12)).rejects.toThrow(/expected 12, got 10/);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});

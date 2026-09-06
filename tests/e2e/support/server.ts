@@ -117,3 +117,22 @@ export async function assertMediaDownloadable(): Promise<void> {
   // Drain the (tiny) body so the socket is released.
   await dlRes.arrayBuffer().catch(() => undefined);
 }
+
+export async function assertServerMajor(version: string, expected: number): Promise<void> {
+  const { url, apiKey } = readServerConfig(version);
+  const res = await fetch(`${url}/System/Info`, {
+    headers: { 'X-Emby-Token': apiKey },
+  });
+  if (!res.ok) {
+    throw new Error(`Could not read /System/Info (HTTP ${res.status}) at ${url}.`);
+  }
+  const info = (await res.json()) as { ServerVersion?: string };
+  const majorStr = (info.ServerVersion ?? '').split('.')[0];
+  const major = Number.parseInt(majorStr, 10);
+  if (!Number.isFinite(major) || major !== expected) {
+    throw new Error(
+      `Wrong Jellyfin major for project ${version}: expected ${expected}, got ${info.ServerVersion ?? '(missing)'}. ` +
+        `Did you edit docker-compose.${version}.yml to point at the wrong image?`,
+    );
+  }
+}
