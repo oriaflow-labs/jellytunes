@@ -16,7 +16,7 @@ electron.vite.config.*.mjs
 coverage/
 scripts/.analytics-chartli-tmp.txt
 tests/e2e/fixtures/music/
-tests/e2e/.server.json
+tests/e2e/.server*.json
 tests/e2e/report/
 tests/e2e/.artifacts/
 tests/e2e/docker/provisioned-config/
