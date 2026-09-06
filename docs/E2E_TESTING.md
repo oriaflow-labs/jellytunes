@@ -4,27 +4,31 @@ JellyTunes uses Playwright to drive the real Electron app against a containerise
 
 ## Quick Start
 
-**First time only** (generates ~46 MB of fixtures and bakes a provisioned Jellyfin image):
+**First time only** (generates ~46 MB of fixtures per version and bakes two provisioned Jellyfin images — one per major version):
 
 ```bash
-bash tests/e2e/docker/rebuild.sh
-docker compose -f tests/e2e/docker-compose.yml up -d
+bash tests/e2e/docker/rebuild.sh v11   # jellytunes-e2e:1-v11 from jellyfin/jellyfin:10.10.3
+bash tests/e2e/docker/rebuild.sh v12   # jellytunes-e2e:1-v12 from jellyfin/jellyfin:12.0-rc.7
 ```
 
 **Every day:**
 
 ```bash
-# Run all E2E tests
+# Run the full matrix (both v11 and v12 in one invocation)
 pnpm test:e2e
 
-# Run a single scenario (e.g., E2)
-pnpm test:e2e -- --grep E2
+# Run only one version
+pnpm test:e2e -- --project=jellyfin-v11
+pnpm test:e2e -- --project=jellyfin-v12
 
-# After you're done, stop the container
-docker compose -f tests/e2e/docker-compose.yml down
+# After you're done, stop the containers
+docker compose -f tests/e2e/docker-compose.v11.yml down
+docker compose -f tests/e2e/docker-compose.v12.yml down
 ```
 
-Jellyfin needs roughly 22 seconds from a cold `up -d` to answer HTTP requests. The test suite's global setup polls for up to 60 seconds before giving up with an actionable error message.
+> **Note on version naming**: The project labels jellyfin-v11 and jellyfin-v12 are colloquial — they refer to Jellyfin major lineages (10.10.x → 10.11.x is "v11", 12.0.x → 12.1.x is "v12"). The actual images pinned are 10.10.3 and 12.0-rc7.
+
+Jellyfin needs roughly 22 seconds from a cold up -d to answer HTTP requests. The test suite's global setup polls for up to 60 seconds before giving up with an actionable error message.
 
 ## Test Status
 
@@ -37,12 +41,12 @@ The suite runs 9 scenarios (13 Playwright tests):
 | **E3** Re-sync no-op       | ✅ Passing | Known to fail intermittently (~1 in 8 runs) with ~33s signature. Root cause under investigation. |
 | **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                        |
 | **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. Tracked by ORAIN-0671.                                 |
-| **E6** Playlist sync       | ✅ Passing | Asserts the tracks and the generated `.m3u8` index, including that its entries resolve on disk   |
+| **E6** Playlist sync       | ✅ Passing | Asserts the tracks and the generated .m3u8 index, including that its entries resolve on disk     |
 | **E7** Deselect & remove   | ✅ Passing | Exercises the delete-only preview branch and asserts the destination ends empty                  |
-| **E8** Metadata layout     | ✅ Passing | Untagged album (`AlbumId`→`MusicAlbum`) and compilation folder placement — 2 tests               |
+| **E8** Metadata layout     | ✅ Passing | Untagged album (AlbumId→MusicAlbum) and compilation folder placement — 2 tests                   |
 | **E9** Navigation          | ✅ Passing | Tabs, server-side search and select-all — 4 tests, no sync, fastest in the suite                 |
 
-The select-all confirmation dialog (`select-all-confirm-dialog`) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
+The select-all confirmation dialog (select-all-confirm-dialog) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
 
 ## Known Issues
 
@@ -52,19 +56,35 @@ Clicking the cancel button mid-sync does not reliably prevent all tracks from be
 
 - **Observed behavior**: With 600-second fixtures, a sync runs roughly 30 seconds. The cancel button was clicked approximately 1 second into the sync, and all three tracks were written anyway.
 - **Wiring is correct**: The cancel path is wired end-to-end and has been traced through:
-  - `useSync.ts:529 handleCancelSync`
-  - → `window.api.cancelSync()`
-  - → `ipcMain.handle('sync:cancel')` at `src/main/index.ts:1209`
-  - → `cancelSync()` at `src/main/index.ts:587`
-  - → `activeSyncCore.cancel()`
+  - useSync.ts:529 handleCancelSync
+  - → window.api.cancelSync()
+  - → ipcMain.handle('sync:cancel') at src/main/index.ts:1209
+  - → cancelSync() at src/main/index.ts:587
+  - → activeSyncCore.cancel()
 
   There is no guard that swallows the click, so "the click goes nowhere" is ruled out.
 
-- **Unresolved question**: The next diagnostic step is to run the app with a fixed `--user-data-dir`, capture the logs with electron-log, and check whether the line `Sync cancellation requested` appears. If the line is present and all three tracks were still written, the app received the cancellation request and ignored it — a genuine defect in `activeSyncCore.cancel()`. If the line is absent, the IPC message never arrived — a test-side problem.
+- **Unresolved question**: The next diagnostic step is to run the app with a fixed --user-data-dir, capture the logs with electron-log, and check whether the line "Sync cancellation requested" appears. If the line is present and all three tracks were still written, the app received the cancellation request and ignored it — a genuine defect in activeSyncCore.cancel(). If the line is absent, the IPC message never arrived — a test-side problem.
 
-- **Unit tests don't catch it either**: The existing unit test at `src/sync/sync.test.ts:899` accepts either outcome (`"should either cancel or complete (race condition)"`), so the unit layer would not catch a broken cancellation.
+- **Unit tests don't catch it either**: The existing unit test at src/sync/sync.test.ts:899 accepts either outcome ("should either cancel or complete (race condition)"), so the unit layer would not catch a broken cancellation.
 
-- **What remains intact**: The full scenario body and all assertions, including the guard that fails when the sync completes before it can be cancelled, are in `tests/e2e/specs/e5-cancel.spec.ts`. Nothing was weakened or omitted — only parked pending the diagnostic result.
+- **What remains intact**: The full scenario body and all assertions, including the guard that fails when the sync completes before it can be cancelled, are in tests/e2e/specs/e5-cancel.spec.ts. Nothing was weakened or omitted — only parked pending the diagnostic result.
+
+### v12 image provisioning (broken — ORAIN-0678)
+
+Running bash tests/e2e/docker/rebuild.sh v12 currently fails because:
+
+1. tests/e2e/docker/provision.mjs sends { Username, Pw } to /Users/AuthenticateByName, but Jellyfin 12.0-rc7 expects a different auth body schema. The HTTP 400 from the auth endpoint aborts provisioning.
+2. The bare jellyfin/jellyfin:12.0-rc7 Docker Hub tag has been replaced by the timestamped 12.0-rc7.20260831-232051. rebuild.sh v12 hardcodes the bare tag.
+
+Until ORAIN-0678 lands, the v11 matrix is the one to run:
+
+```bash
+bash tests/e2e/docker/rebuild.sh v11
+pnpm test:e2e -- --project=jellyfin-v11
+```
+
+The matrix wiring for v12 (compose file, Playwright project, assertServerMajor(12)) is in place and statically verified — once ORAIN-0678 ships, pnpm test:e2e (no --project filter) will run both projects.
 
 ## Test Library
 
@@ -76,11 +96,11 @@ The suite tests against a Jellyfin library with:
 - 1 playlist
 - FLAC, MP3, and untagged audio formats
 
-The music library and test fixtures are generated in `tests/e2e/fixtures/music/` by running `bash tests/e2e/docker/rebuild.sh`. They are byte-reproducible via `shasum` and are gitignored (never committed).
+The music library and test fixtures are generated in tests/e2e/fixtures/music/ by running bash tests/e2e/docker/rebuild.sh. They are byte-reproducible via shasum and are gitignored (never committed).
 
 ## Selector Naming Convention
 
-Test selectors use the `data-testid` attribute for locating UI elements. These conventions ensure consistent, maintainable test code.
+Test selectors use the data-testid attribute for locating UI elements. These conventions ensure consistent, maintainable test code.
 
 ### Authentication Screen
 
@@ -221,15 +241,15 @@ Test selectors use the `data-testid` attribute for locating UI elements. These c
 
 ### Selector Guidelines
 
-1. All `data-testid` values must be unique within their context
-2. Dynamic lists (artists, albums, tracks) should use consistent `data-testid` values across iterations
-3. Conditional elements should have `data-testid` for both true and false states when relevant
-4. Prefer `data-testid` over CSS classes for test selectors
-5. Do not remove `data-testid` from production builds — they have minimal impact and enable real-user debugging
+1. All data-testid values must be unique within their context
+2. Dynamic lists (artists, albums, tracks) should use consistent data-testid values across iterations
+3. Conditional elements should have data-testid for both true and false states when relevant
+4. Prefer data-testid over CSS classes for test selectors
+5. Do not remove data-testid from production builds — they have minimal impact and enable real-user debugging
 
 ## Server Configuration
 
-The test suite reads server connection details from `tests/e2e/.server.json`, a gitignored file generated by `rebuild.sh`:
+The test suite reads server connection details from tests/e2e/.server.v11.json or .server.v12.json (one per version), gitignored files generated by rebuild.sh:
 
 ```json
 {
@@ -242,11 +262,11 @@ This file is generated (never committed) to avoid leaking credentials in a publi
 
 ## Fixtures & Generated Data
 
-Music fixtures are generated in `tests/e2e/fixtures/music/` by the rebuild script and are byte-reproducible. They are gitignored and regenerated on each `rebuild.sh` run.
+Music fixtures are generated in tests/e2e/fixtures/music/ by the rebuild script and are byte-reproducible. They are gitignored and regenerated on each rebuild.sh run.
 
 ## Why the Suite Never Skips
 
-The test suite's `globalSetup` hook explicitly fails (with an actionable error message) if the Jellyfin server is unavailable. There is no silent skip. This ensures that developers catch connectivity issues immediately instead of getting a false green.
+The test suite's globalSetup hook explicitly fails (with an actionable error message) if the Jellyfin server is unavailable. There is no silent skip. This ensures that developers catch connectivity issues immediately instead of getting a false green.
 
 ## Local Development Only
 
@@ -255,6 +275,6 @@ The E2E suite is designed for local development. It is:
 - Not a CI gate
 - Not run in workflows
 - Requires Docker to be running
-- Requires manual `docker compose` management
+- Requires manual docker compose management
 
 For CI-gated testing, the suite relies on unit tests and critical user flow assertions in the Playwright config.
