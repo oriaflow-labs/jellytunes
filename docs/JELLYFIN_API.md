@@ -10,11 +10,11 @@ clearly.
 Jellyfin distinguishes three different relationships between a `Person` and a
 track. Each one is a separate filter parameter on `/Users/{userId}/Items`:
 
-| Param | Semantic |
-|---|---|
-| `ArtistIds`        | Match the `Artists` array on the track OR the `AlbumArtists` on its album. Broadest. |
-| `AlbumArtistIds`   | Match the `AlbumArtists` field on the track's album. Album-level. |
-| `ContributingArtistIds` | Match the `Artists` array on the track only (excluding album-level credit). |
+| Param                   | Semantic                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `ArtistIds`             | Match the `Artists` array on the track OR the `AlbumArtists` on its album. Broadest. |
+| `AlbumArtistIds`        | Match the `AlbumArtists` field on the track's album. Album-level.                    |
+| `ContributingArtistIds` | Match the `Artists` array on the track only (excluding album-level credit).          |
 
 The `ArtistIds` vs `AlbumArtistIds` distinction was the source of ORAIN-0534
 ("artists and albumArtists are separate entities") and the source of the
@@ -129,3 +129,77 @@ the most reliable way to fetch all tracks under an album. The
 alternative `albumIds=` is unreliable when the track's `Album` field is
 NULL (a data-quality edge case we've observed in real Jellyfin
 libraries).
+
+## Authentication header — supported range v10.10 – v12
+
+ORAIN-0562 moved every authenticated request to a single header
+(`buildAuthHeader` in `src/shared/auth-headers.ts`):
+
+```
+Authorization: MediaBrowser Token="<key>", Client="JellyTunes", Device="<host>", DeviceId="<stable-id>", Version="<app-version>"
+```
+
+The legacy `X-Emby-Token` / `X-MediaBrowser-Token` headers are **not** sent.
+
+ORAIN-0599 audited this against real containers through the e2e matrix
+(`tests/e2e` projects `jellyfin-v11` and `jellyfin-v12`):
+
+| Server                                                             | `Authorization: MediaBrowser` | `X-Emby-Token`       |
+| ------------------------------------------------------------------ | ----------------------------- | -------------------- |
+| Jellyfin 10.10.3 (`jellyfin-v11`)                                  | 200                           | 200 (still accepted) |
+| Jellyfin 12.0 — vanilla                                            | 200                           | **401**              |
+| Jellyfin 12.0 — `EnableLegacyAuthorization=false` (`jellyfin-v12`) | 200                           | 401                  |
+
+Findings:
+
+- Jellyfin **12 rejects the legacy header out of the box** — you do not need
+  `EnableLegacyAuthorization=false` to see the 401. That flag only governs
+  whether a 10.11 server keeps accepting it.
+- The single `MediaBrowser` header satisfies the **entire supported range,
+  v10.10 – v12**, legacy-auth-on and hardened alike. No supported server
+  needs `X-Emby-Token` in addition (S5, owner decision 2026-09-06). If a
+  future legacy server is found that does, record it here and open a
+  follow-up — do not revert the single-header design.
+- The two e2e projects (`jellyfin-v11` legacy, `jellyfin-v12` hardened) are
+  a **permanent dual compatibility gate**.
+
+## `/Users/Me` with an API key → 400 (every version)
+
+`useJellyfinConnection.ts` calls `GET /Users/Me` on the first connect
+(`connectToJellyfin`, no persisted `userId` yet). A dashboard API key carries
+no user context, so `/Users/Me` returns **400 Bad Request** — verified
+identical on **Jellyfin 10.10.3 and 12.0** (ORAIN-0599). This is
+[jellyfin/jellyfin#14559](https://github.com/jellyfin/jellyfin/issues/14559),
+triaged upstream as **"Not A Bug"** (expected behaviour since 10.10.0).
+
+Runtime impact (S3): **none beyond the first login, and not a v12
+regression.** `connectToJellyfin` catches the 400, falls through to
+`GET /Users` (200 with an API key on every version) and renders
+`UserSelectorScreen`. Once the user picks an identity, `userId` is written to
+the encrypted session and every later launch takes the fast path
+(`/System/Info/Public` only). So an API-key login shows the user selector
+exactly once, on any Jellyfin version. No follow-up task (owner decision
+2026-09-06: only open one if runtime degradation is confirmed — it is not).
+
+## API surface against Jellyfin 12 hardened (S4)
+
+The full e2e suite (E1–E9: login → library browse → sync → playlist →
+metadata layout) passes **unchanged** against `jellyfin/jellyfin:12.0-rc7`
+with `EnableLegacyAuthorization=false` (ORAIN-0599). Endpoints exercised and
+confirmed equivalent to v11:
+
+- `/System/Info`, `/System/Info/Public`
+- `/Users`, `/Users/{userId}/Views`, `/Users/{userId}/Items`,
+  `/Users/{userId}/Items/{id}`, `/Users/{userId}/Items/Counts`
+- `/Artists`, `/Genres?ParentId=`
+- `/Playlists`, `/Playlists/{id}/Items`
+- `/Items/{id}/Download`
+- `/Items/{id}/Images/Primary`, `/Users/{id}/Images/Primary`
+  (`LibraryItem.tsx`, `UserSelectorScreen.tsx`) — render correctly
+
+`docker logs` of the hardened v12 container across a full e2e run show **no
+deprecation warnings and no request-level errors** — only the two
+boot-time infra notices every headless Jellyfin image emits (`WebRootPath
+/wwwroot not found`, `No XML encryptor configured`). Jellyfin 12 does not
+log successful API requests at the default level, so the green suite is the
+primary evidence here.
