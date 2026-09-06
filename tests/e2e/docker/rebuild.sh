@@ -54,6 +54,11 @@ echo "==> Provisioning over HTTP"
 node "$ROOT/tests/e2e/docker/provision.mjs"
 
 echo "==> Extracting provisioned state"
+# RUNTIME ASSUMPTION: the throwaway must be stopped so SQLite checkpoints its WAL before
+# the config/cache tree is copied; a live-container snapshot bakes an inconsistent DB that
+# crashes Jellyfin 12's migration service on boot (exit 139, InvalidOperationException in
+# JellyfinMigrationService). Stop unconditionally for both v11 and v12.
+docker stop "$BUILD_NAME" >/dev/null 2>&1
 docker cp "$BUILD_NAME:/config" "$DOCKER_DIR/provisioned-config"
 docker cp "$BUILD_NAME:/cache" "$DOCKER_DIR/provisioned-cache"
 

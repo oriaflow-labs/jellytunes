@@ -1,3 +1,5 @@
+name: jellytunes-e2e-v11
+
 services:
   jellyfin:
     image: jellytunes-e2e:1-v11

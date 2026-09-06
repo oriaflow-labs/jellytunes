@@ -22,3 +22,65 @@ describe('rebuild.sh image pinning', () => {
     expect(v12Tag).not.toBe('jellyfin/jellyfin:12.0-rc7');
   });
 });
+
+describe('rebuild.sh harness correctness', () => {
+  it('stops the throwaway container before copying config/cache (Bug A fix)', () => {
+    const rebuildScript = readFileSync(join(__dirname, '../docker/rebuild.sh'), 'utf-8');
+
+    // Find the line where docker cp "$BUILD_NAME:/config" appears
+    const dockerCpConfigIndex = rebuildScript.indexOf('docker cp "$BUILD_NAME:/config"');
+    expect(dockerCpConfigIndex).toBeGreaterThan(-1, 'rebuild.sh should contain docker cp command');
+
+    // Find the line where docker stop "$BUILD_NAME" appears
+    const dockerStopIndex = rebuildScript.indexOf('docker stop "$BUILD_NAME"');
+
+    // Verify docker stop comes BEFORE docker cp, and it's not commented out
+    expect(dockerStopIndex).toBeGreaterThan(
+      -1,
+      'rebuild.sh must issue `docker stop "$BUILD_NAME"` before copying the config; ' +
+        "a live-container snapshot bakes an inconsistent DB that crashes Jellyfin 12's migration service on boot",
+    );
+    expect(dockerStopIndex).toBeLessThan(
+      dockerCpConfigIndex,
+      'docker stop must come BEFORE docker cp so SQLite checkpoints its WAL',
+    );
+  });
+});
+
+describe('docker-compose files have unique project names', () => {
+  it('docker-compose.v11.yml declares a unique top-level name:', () => {
+    const composeV11 = readFileSync(join(__dirname, '../docker-compose.v11.yml'), 'utf-8');
+
+    // Look for a top-level "name:" field in YAML (should be at the start of a line, not indented under services)
+    const nameMatch = composeV11.match(/^name:\s*(.+)$/m);
+    expect(nameMatch).toBeTruthy(
+      'docker-compose.v11.yml must declare a top-level `name:` field; ' +
+        'distinct compose project names so `pnpm test:e2e` can hold both Jellyfin containers up at once',
+    );
+    expect(nameMatch?.[1]?.trim()).toBe('jellytunes-e2e-v11');
+  });
+
+  it('docker-compose.v12.yml declares a unique top-level name:', () => {
+    const composeV12 = readFileSync(join(__dirname, '../docker-compose.v12.yml'), 'utf-8');
+
+    // Look for a top-level "name:" field in YAML
+    const nameMatch = composeV12.match(/^name:\s*(.+)$/m);
+    expect(nameMatch).toBeTruthy(
+      'docker-compose.v12.yml must declare a top-level `name:` field; ' +
+        'distinct compose project names prevent the second `docker compose up` from evicting the first',
+    );
+    expect(nameMatch?.[1]?.trim()).toBe('jellytunes-e2e-v12');
+  });
+
+  it('v11 and v12 have different project names (Bug B fix)', () => {
+    const composeV11 = readFileSync(join(__dirname, '../docker-compose.v11.yml'), 'utf-8');
+    const composeV12 = readFileSync(join(__dirname, '../docker-compose.v12.yml'), 'utf-8');
+
+    const nameV11 = composeV11.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    const nameV12 = composeV12.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+
+    expect(nameV11).toBeDefined();
+    expect(nameV12).toBeDefined();
+    expect(nameV11).not.toBe(nameV12);
+  });
+});
