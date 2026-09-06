@@ -8,7 +8,7 @@ JellyTunes uses Playwright to drive the real Electron app against a containerise
 
 ```bash
 bash tests/e2e/docker/rebuild.sh v11   # jellytunes-e2e:1-v11 from jellyfin/jellyfin:10.10.3
-bash tests/e2e/docker/rebuild.sh v12   # jellytunes-e2e:1-v12 from jellyfin/jellyfin:12.0-rc.7
+bash tests/e2e/docker/rebuild.sh v12   # jellytunes-e2e:1-v12 from jellyfin/jellyfin:12.0-rc7.20260831-232051
 ```
 
 **Every day:**
@@ -26,7 +26,7 @@ docker compose -f tests/e2e/docker-compose.v11.yml down
 docker compose -f tests/e2e/docker-compose.v12.yml down
 ```
 
-> **Note on version naming**: The project labels jellyfin-v11 and jellyfin-v12 are colloquial — they refer to Jellyfin major lineages (10.10.x → 10.11.x is "v11", 12.0.x → 12.1.x is "v12"). The actual images pinned are 10.10.3 and 12.0-rc7.
+> **Note on version naming**: The project labels jellyfin-v11 and jellyfin-v12 are colloquial — they refer to Jellyfin major lineages (10.10.x → 10.11.x is "v11", 12.0.x → 12.1.x is "v12"). The actual images pinned are 10.10.3 and 12.0-rc7.20260831-232051 (immutable timestamped tag).
 
 Jellyfin needs roughly 22 seconds from a cold up -d to answer HTTP requests. The test suite's global setup polls for up to 60 seconds before giving up with an actionable error message.
 
