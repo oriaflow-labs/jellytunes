@@ -19,6 +19,7 @@ export default defineConfig({
       'tests/unit/**/*.test.ts',
       'src/renderer/**/*.test.tsx',
       'src/renderer/**/*.test.ts',
+      'tests/e2e/**/*.test.ts',
     ],
     // Node environment for pure logic tests - no jsdom overhead
     environmentMatchGlobs: [
@@ -30,6 +31,8 @@ export default defineConfig({
       ['src/shared/**/*.test.ts', 'node'],
       // unit tests - mostly pure logic, no DOM needed
       ['tests/unit/**/*.test.ts', 'node'],
+      // e2e support tests - pure Node, no DOM needed
+      ['tests/e2e/**/*.test.ts', 'node'],
     ],
     maxWorkers: 2,
     minWorkers: 1,

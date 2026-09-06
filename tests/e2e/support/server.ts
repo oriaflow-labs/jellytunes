@@ -7,11 +7,9 @@ export interface ServerConfig {
   userId: string;
 }
 
-const CONFIG_PATH = join(__dirname, '..', '.server.json');
-
 const REBUILD_HINT =
   'Run: bash tests/e2e/docker/rebuild.sh\n' +
-  'Then: docker compose -f tests/e2e/docker-compose.yml up -d';
+  'Then: docker compose -f tests/e2e/docker-compose.v11.yml up -d';
 
 const STARTUP_HINT = 'Run: docker compose -f tests/e2e/docker-compose.yml up -d';
 
@@ -22,13 +20,19 @@ const STALE_MOUNT_HINT =
   'Run: docker compose -f tests/e2e/docker-compose.yml down\n' +
   'Then: docker compose -f tests/e2e/docker-compose.yml up -d';
 
-export function readServerConfig(): ServerConfig {
-  if (!existsSync(CONFIG_PATH)) {
-    throw new Error(
-      `Missing ${CONFIG_PATH}. The test Jellyfin has never been provisioned.\n${REBUILD_HINT}`,
-    );
+function configPath(version?: string): string {
+  const dir = process.env.E2E_CONFIG_DIR ?? join(__dirname, '..');
+  const name = version ? `.server.${version}.json` : '.server.json';
+  return join(dir, name);
+}
+
+export function readServerConfig(version?: string): ServerConfig {
+  const path = configPath(version);
+  if (!existsSync(path)) {
+    const hint = version ? `Run: bash tests/e2e/docker/rebuild.sh ${version}` : REBUILD_HINT;
+    throw new Error(`Missing ${path}. The test Jellyfin has never been provisioned.\n${hint}`);
   }
-  return JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as ServerConfig;
+  return JSON.parse(readFileSync(path, 'utf8')) as ServerConfig;
 }
 
 export async function assertServerReachable(): Promise<void> {
@@ -90,10 +94,9 @@ export async function assertMediaDownloadable(): Promise<void> {
   const { url, apiKey } = readServerConfig();
   const auth = { 'X-Emby-Token': apiKey };
 
-  const listRes = await fetch(
-    `${url}/Items?IncludeItemTypes=Audio&Recursive=true&Limit=1`,
-    { headers: auth },
-  );
+  const listRes = await fetch(`${url}/Items?IncludeItemTypes=Audio&Recursive=true&Limit=1`, {
+    headers: auth,
+  });
   if (!listRes.ok) {
     throw new Error(`Could not list audio items (HTTP ${listRes.status}).\n${REBUILD_HINT}`);
   }

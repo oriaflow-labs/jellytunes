@@ -21,3 +21,4 @@ tests/e2e/report/
 tests/e2e/.artifacts/
 tests/e2e/docker/provisioned-config/
 tests/e2e/docker/provisioned-cache/
+.worktrees
