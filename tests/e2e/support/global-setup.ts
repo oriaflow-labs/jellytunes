@@ -7,10 +7,11 @@ export default async function globalSetup(): Promise<void> {
   if (!existsSync(mainEntry)) {
     throw new Error(`Missing ${mainEntry}. Run: pnpm build`);
   }
-  await assertServerReachable();
-  await assertMediaDownloadable();
 
   const version = process.env.JELLYFIN_VERSION;
+  await assertServerReachable(version);
+  await assertMediaDownloadable(version);
+
   const expected = process.env.JELLYFIN_EXPECTED_MAJOR;
   if (version && expected) {
     await assertServerMajor(version, Number.parseInt(expected, 10));

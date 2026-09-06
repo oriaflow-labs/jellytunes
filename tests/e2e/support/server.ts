@@ -35,8 +35,8 @@ export function readServerConfig(version?: string): ServerConfig {
   return JSON.parse(readFileSync(path, 'utf8')) as ServerConfig;
 }
 
-export async function assertServerReachable(): Promise<void> {
-  const { url, apiKey } = readServerConfig();
+export async function assertServerReachable(version?: string): Promise<void> {
+  const { url, apiKey } = readServerConfig(version);
   let lastError = 'no attempt made';
   let containerNotRunning = false;
 
@@ -90,8 +90,8 @@ export async function assertServerReachable(): Promise<void> {
  * sync scenario failing with "Download failed: 404 Not Found". This check turns
  * that into one actionable error at setup time.
  */
-export async function assertMediaDownloadable(): Promise<void> {
-  const { url, apiKey } = readServerConfig();
+export async function assertMediaDownloadable(version?: string): Promise<void> {
+  const { url, apiKey } = readServerConfig(version);
   const auth = { 'X-Emby-Token': apiKey };
 
   const listRes = await fetch(`${url}/Items?IncludeItemTypes=Audio&Recursive=true&Limit=1`, {
