@@ -88,6 +88,33 @@ export async function confirmSyncFromPreview(
   await expect(page.getByTestId('sync-preview-modal')).toBeHidden({ timeout: 30_000 });
 }
 
+/**
+ * Dismiss the post-sync SyncSuccessModal ("Sync complete" / "Sync failed").
+ *
+ * RUNTIME ASSUMPTION: the modal renders on the IPC "sync finished" event, which
+ * lands *after* the last track hits disk — and that gap is wider on a slower
+ * server (Jellyfin 12 does more per request than 10.x). Callers that poll
+ * `listTree(destDir)` to detect completion therefore race the modal: the files
+ * are already there while the modal has not painted yet. Waiting on the heading
+ * (not just probing `isVisible()` once) closes that race. Its `z-50` backdrop
+ * intercepts pointer events, so any post-sync UI interaction — a second sync,
+ * a tab switch — hangs for 30 s until it is gone (observed on jellyfin-v12 for
+ * E3 and E7, ORAIN-0599).
+ *
+ * The modal is genuinely optional (Escape / backdrop click also dismiss it and
+ * a caller may have triggered that already), so a timeout waiting for it is not
+ * a failure.
+ */
+export async function dismissSyncSuccessModal(page: Page): Promise<void> {
+  const heading = page.getByRole('heading', { name: /^Sync (complete|failed)$/i });
+  await heading.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+
+  const closeButton = page.getByRole('button', { name: /^Close$/i }).first();
+  if (!(await closeButton.isVisible().catch(() => false))) return;
+  await closeButton.click();
+  await closeButton.waitFor({ state: 'hidden', timeout: 15_000 });
+}
+
 /** Recursive file listing, relative to root, sorted. Directories are not listed. */
 export function listTree(root: string): string[] {
   const out: string[] = [];
