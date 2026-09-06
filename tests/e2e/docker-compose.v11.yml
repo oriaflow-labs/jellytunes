@@ -1,7 +1,7 @@
 services:
   jellyfin:
-    image: jellytunes-e2e:1
-    container_name: jellytunes-e2e
+    image: jellytunes-e2e:1-v11
+    container_name: jellytunes-e2e-v11
     ports:
       - '8096:8096'
     volumes:
