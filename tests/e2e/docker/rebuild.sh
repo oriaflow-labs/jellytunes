@@ -6,13 +6,13 @@
 # Usage:
 #   rebuild.sh           # default: v11 (10.10.3) — preserves current behavior
 #   rebuild.sh v11       # 10.10.3  → jellytunes-e2e:1-v11
-#   rebuild.sh v12       # 12.0-rc.7 → jellytunes-e2e:1-v12
+#   rebuild.sh v12       # 12.0-rc7.20260831-232051 → jellytunes-e2e:1-v12
 set -euo pipefail
 
 VERSION="${1:-v11}"
 case "$VERSION" in
   v11) JELLYFIN_IMAGE="jellyfin/jellyfin:10.10.3"  ;;
-  v12) JELLYFIN_IMAGE="jellyfin/jellyfin:12.0-rc7" ;;
+  v12) JELLYFIN_IMAGE="jellyfin/jellyfin:12.0-rc7.20260831-232051" ;;  # Immutable timestamped tag to prevent silently changing targets
   *) echo "Unknown version '$VERSION'. Expected: v11 | v12" >&2; exit 2 ;;
 esac
 
@@ -54,6 +54,11 @@ echo "==> Provisioning over HTTP"
 node "$ROOT/tests/e2e/docker/provision.mjs"
 
 echo "==> Extracting provisioned state"
+# RUNTIME ASSUMPTION: the throwaway must be stopped so SQLite checkpoints its WAL before
+# the config/cache tree is copied; a live-container snapshot bakes an inconsistent DB that
+# crashes Jellyfin 12's migration service on boot (exit 139, InvalidOperationException in
+# JellyfinMigrationService). Stop unconditionally for both v11 and v12.
+docker stop "$BUILD_NAME" >/dev/null 2>&1
 docker cp "$BUILD_NAME:/config" "$DOCKER_DIR/provisioned-config"
 docker cp "$BUILD_NAME:/cache" "$DOCKER_DIR/provisioned-cache"
 

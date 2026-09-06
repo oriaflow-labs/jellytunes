@@ -1,22 +1,11 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Page } from '@playwright/test';
 import { test, expect, login } from '../support/app';
-import { addDestination, listTree, selectAlbum } from '../support/actions';
+import { addDestination, dismissSyncSuccessModal, listTree, selectAlbum } from '../support/actions';
 
 const library = JSON.parse(
   readFileSync(join(__dirname, '..', 'fixtures', 'library.json'), 'utf8'),
 ) as { albumAlphaTree: string[] };
-
-async function closeSyncCompleteModal(page: Page): Promise<void> {
-  const closeButton = page.getByRole('button', { name: /^Close$/i }).first();
-  // The success modal is genuinely optional, so absence is not a failure.
-  if (!(await closeButton.isVisible())) return;
-  await closeButton.click();
-  // Wait for the close button to disappear, indicating the modal has been dismissed.
-  // Use longer timeout to account for animation and UI state updates on loaded machines.
-  await closeButton.waitFor({ state: 'hidden', timeout: 15000 });
-}
 
 test('E3: re-syncing the same selection copies nothing and leaves files untouched', async ({
   page,
@@ -58,7 +47,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
       mtimeMs: statSync(join(destDir, rel)).mtimeMs,
     }));
 
-  await closeSyncCompleteModal(page);
+  await dismissSyncSuccessModal(page);
 
   // Ensure sync-panel is ready before attempting second sync
   await page.getByTestId('sync-panel').waitFor({ state: 'visible', timeout: 15_000 });
@@ -74,7 +63,7 @@ test('E3: re-syncing the same selection copies nothing and leaves files untouche
   await page.getByTestId('confirm-sync-button').click();
   await expect(page.getByTestId('sync-preview-modal')).toBeHidden();
 
-  await closeSyncCompleteModal(page);
+  await dismissSyncSuccessModal(page);
 
   // Verify all original files still exist with unchanged mtimes
   // (Files were not rewritten, proving re-sync was a no-op)

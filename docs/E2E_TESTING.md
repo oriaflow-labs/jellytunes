@@ -4,47 +4,70 @@ JellyTunes uses Playwright to drive the real Electron app against a containerise
 
 ## Quick Start
 
-**First time only** (generates ~46 MB of fixtures per version and bakes two provisioned Jellyfin images — one per major version):
+**First time only in a fresh checkout / worktree** — build the native addons for
+the Electron ABI, then bake the two provisioned Jellyfin images (this also
+generates ~46 MB of fixtures per version):
 
 ```bash
+pnpm install                           # runs electron-builder install-app-deps
+                                       # (better-sqlite3 etc. against Electron 33)
 bash tests/e2e/docker/rebuild.sh v11   # jellytunes-e2e:1-v11 from jellyfin/jellyfin:10.10.3
-bash tests/e2e/docker/rebuild.sh v12   # jellytunes-e2e:1-v12 from jellyfin/jellyfin:12.0-rc.7
+bash tests/e2e/docker/rebuild.sh v12   # jellytunes-e2e:1-v12 from jellyfin/jellyfin:12.0-rc7.20260831-232051
 ```
+
+If a run fails at `firstWindow()` / "Target page … has been closed", the native
+addons were not rebuilt for this working copy — run `pnpm run postinstall`.
 
 **Every day:**
 
 ```bash
-# Run the full matrix (both v11 and v12 in one invocation)
+# Run the full matrix — both jellyfin-v11 and jellyfin-v12 in one invocation
 pnpm test:e2e
 
-# Run only one version
-pnpm test:e2e -- --project=jellyfin-v11
-pnpm test:e2e -- --project=jellyfin-v12
+# Run only one version (note: no `--` — pnpm 11 does not forward args past it)
+pnpm test:e2e --project=jellyfin-v11
+pnpm test:e2e --project=jellyfin-v12
 
 # After you're done, stop the containers
 docker compose -f tests/e2e/docker-compose.v11.yml down
 docker compose -f tests/e2e/docker-compose.v12.yml down
 ```
 
-> **Note on version naming**: The project labels jellyfin-v11 and jellyfin-v12 are colloquial — they refer to Jellyfin major lineages (10.10.x → 10.11.x is "v11", 12.0.x → 12.1.x is "v12"). The actual images pinned are 10.10.3 and 12.0-rc7.
+> **Note on version naming**: The project labels jellyfin-v11 and jellyfin-v12 are colloquial — they refer to Jellyfin major lineages (10.10.x → 10.11.x is "v11", 12.0.x → 12.1.x is "v12"). The actual images pinned are 10.10.3 and 12.0-rc7.20260831-232051 (immutable timestamped tag).
 
 Jellyfin needs roughly 22 seconds from a cold up -d to answer HTTP requests. The test suite's global setup polls for up to 60 seconds before giving up with an actionable error message.
+
+## Compatibility matrix (v11 / v12 — permanent dual gate)
+
+JellyTunes must work against Jellyfin **v10.10–v11** (legacy auth included) **and**
+against **v12** with hardened auth (`EnableLegacyAuthorization=false`). The two
+Playwright projects are the standing gate for both ends of that range:
+
+| Project        | Image                                        | Auth posture                                                                 |
+| -------------- | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| `jellyfin-v11` | `jellyfin/jellyfin:10.10.3`                  | legacy `X-Emby-Token` still accepted                                         |
+| `jellyfin-v12` | `jellyfin/jellyfin:12.0-rc7.20260831-232051` | `EnableLegacyAuthorization=false`, modern `Authorization: MediaBrowser` only |
+
+`rebuild.sh v12` injects the hardening flag into `system.xml` before baking the
+image. Both suites run the same 9 scenarios and are expected to end **12 passed /
+1 skipped** (E5 is the parked `fixme`). Audited green end-to-end against real
+containers in ORAIN-0599 (see `docs/JELLYFIN_API.md` → "Authentication header").
 
 ## Test Status
 
 The suite runs 9 scenarios (13 Playwright tests):
 
-| Scenario                   | Status     | Notes                                                                                            |
-| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin                                                   |
-| **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                          |
-| **E3** Re-sync no-op       | ✅ Passing | Known to fail intermittently (~1 in 8 runs) with ~33s signature. Root cause under investigation. |
-| **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                        |
-| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. Tracked by ORAIN-0671.                                 |
-| **E6** Playlist sync       | ✅ Passing | Asserts the tracks and the generated .m3u8 index, including that its entries resolve on disk     |
-| **E7** Deselect & remove   | ✅ Passing | Exercises the delete-only preview branch and asserts the destination ends empty                  |
-| **E8** Metadata layout     | ✅ Passing | Untagged album (AlbumId→MusicAlbum) and compilation folder placement — 2 tests                   |
-| **E9** Navigation          | ✅ Passing | Tabs, server-side search and select-all — 4 tests, no sync, fastest in the suite                 |
+| Scenario                   | Status     | Notes                                                                                                                                                                                   |
+| -------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin                                                                                                                                          |
+| **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                                                                                                                 |
+| **E3** Re-sync no-op       | ✅ Passing | Historically flaked ~1 in 8. ORAIN-0599 traced it to the post-sync "Sync complete" modal painting after `listTree` sees the files; `dismissSyncSuccessModal()` now waits the modal out. |
+| **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                                                                                                               |
+| **E5** Cancellation        | 🚧 Parked  | Full scenario body and assertions intact. Tracked by ORAIN-0671.                                                                                                                        |
+| **E6** Playlist sync       | ✅ Passing | Asserts the tracks and the generated .m3u8 index, including that its entries resolve on disk                                                                                            |
+| **E7** Deselect & remove   | ✅ Passing | Exercises the delete-only preview branch and asserts the destination ends empty                                                                                                         |
+| **E8** Metadata layout     | ✅ Passing | Untagged album (AlbumId→MusicAlbum) and compilation folder placement — 2 tests                                                                                                          |
+| **E9** Navigation          | ✅ Passing | Tabs, server-side search and select-all — 4 tests, no sync, fastest in the suite                                                                                                        |
 
 The select-all confirmation dialog (select-all-confirm-dialog) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
 
@@ -70,21 +93,24 @@ Clicking the cancel button mid-sync does not reliably prevent all tracks from be
 
 - **What remains intact**: The full scenario body and all assertions, including the guard that fails when the sync completes before it can be cancelled, are in tests/e2e/specs/e5-cancel.spec.ts. Nothing was weakened or omitted — only parked pending the diagnostic result.
 
-### v12 image provisioning (broken — ORAIN-0678)
+### v12 provisioning — resolved (ORAIN-0678 + ORAIN-0599)
 
-Running bash tests/e2e/docker/rebuild.sh v12 currently fails because:
+`bash tests/e2e/docker/rebuild.sh v12` and `pnpm test:e2e --project=jellyfin-v12`
+both work. History, for the record:
 
-1. tests/e2e/docker/provision.mjs sends { Username, Pw } to /Users/AuthenticateByName, but Jellyfin 12.0-rc7 expects a different auth body schema. The HTTP 400 from the auth endpoint aborts provisioning.
-2. The bare jellyfin/jellyfin:12.0-rc7 Docker Hub tag has been replaced by the timestamped 12.0-rc7.20260831-232051. rebuild.sh v12 hardcodes the bare tag.
-
-Until ORAIN-0678 lands, the v11 matrix is the one to run:
-
-```bash
-bash tests/e2e/docker/rebuild.sh v11
-pnpm test:e2e -- --project=jellyfin-v11
-```
-
-The matrix wiring for v12 (compose file, Playwright project, assertServerMajor(12)) is in place and statically verified — once ORAIN-0678 ships, pnpm test:e2e (no --project filter) will run both projects.
+- ORAIN-0678 migrated `provision.mjs` to the `Authorization: MediaBrowser`
+  header. The `{ Username, Pw }` body to `/Users/AuthenticateByName` is fine on
+  Jellyfin 12.0 — that part was never the problem.
+- ORAIN-0599 fixed what actually remained:
+  1. `rebuild.sh` hardcoded the moving `jellyfin/jellyfin:12.0-rc7` rc tag →
+     now pinned to the immutable `12.0-rc7.20260831-232051`.
+  2. `rebuild.sh` ran `docker cp` against the _live_ throwaway container, baking
+     an inconsistent SQLite snapshot (uncheckpointed WAL) that crashed Jellyfin
+     12's migration service on boot (exit 139). It now `docker stop`s the
+     container first.
+  3. Both compose files derived the same Compose project name (`e2e`), so
+     `pnpm test:e2e` (both projects) evicted one container while starting the
+     other. Each file now declares a unique `name:`.
 
 ## Test Library
 

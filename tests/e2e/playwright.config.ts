@@ -13,6 +13,29 @@ export default defineConfig({
   globalSetupTimeout: 120_000,
   reporter: [['list'], ['html', { outputFolder: './report', open: 'never' }]],
   outputDir: './.artifacts',
+  // `webServer` is a top-level option — Playwright ignores it inside a project
+  // entry. Both Jellyfin containers are started for every invocation (a
+  // single-project run just leaves the other one idle); with distinct compose
+  // project names (docker-compose.v{11,12}.yml `name:`) they coexist on 8096 /
+  // 8097. `reuseExistingServer` makes an already-running container a no-op.
+  webServer: [
+    {
+      command: 'docker compose -f docker-compose.v11.yml up --wait',
+      url: 'http://127.0.0.1:8096/System/Info/Public',
+      reuseExistingServer: true,
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: 'docker compose -f docker-compose.v12.yml up --wait',
+      url: 'http://127.0.0.1:8097/System/Info/Public',
+      reuseExistingServer: true,
+      timeout: 120_000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  ],
   projects: [
     {
       name: 'jellyfin-v11',
@@ -21,19 +44,6 @@ export default defineConfig({
         jellyfinVersion: 'v11',
         jellyfinExpectedMajor: 10,
       },
-      webServer: {
-        command: 'docker compose -f docker-compose.v11.yml up --wait',
-        url: 'http://127.0.0.1:8096/System/Info/Public',
-        reuseExistingServer: true,
-        timeout: 120_000,
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: {
-          JELLYFIN_VERSION: 'v11',
-          JELLYFIN_URL: 'http://127.0.0.1:8096',
-          JELLYFIN_EXPECTED_MAJOR: '10',
-        },
-      },
     },
     {
       name: 'jellyfin-v12',
@@ -41,19 +51,6 @@ export default defineConfig({
         baseURL: 'http://127.0.0.1:8097',
         jellyfinVersion: 'v12',
         jellyfinExpectedMajor: 12,
-      },
-      webServer: {
-        command: 'docker compose -f docker-compose.v12.yml up --wait',
-        url: 'http://127.0.0.1:8097/System/Info/Public',
-        reuseExistingServer: true,
-        timeout: 120_000,
-        stdout: 'pipe',
-        stderr: 'pipe',
-        env: {
-          JELLYFIN_VERSION: 'v12',
-          JELLYFIN_URL: 'http://127.0.0.1:8097',
-          JELLYFIN_EXPECTED_MAJOR: '12',
-        },
       },
     },
   ],
