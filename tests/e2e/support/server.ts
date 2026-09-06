@@ -15,6 +15,13 @@ const REBUILD_HINT =
 
 const STARTUP_HINT = 'Run: docker compose -f tests/e2e/docker-compose.yml up -d';
 
+const STALE_MOUNT_HINT =
+  'The server has library metadata but cannot read the audio files. This usually\n' +
+  'means the container is stale — its ./fixtures/music bind mount points at a path\n' +
+  'that no longer exists (e.g. a removed git worktree).\n' +
+  'Run: docker compose -f tests/e2e/docker-compose.yml down\n' +
+  'Then: docker compose -f tests/e2e/docker-compose.yml up -d';
+
 export function readServerConfig(): ServerConfig {
   if (!existsSync(CONFIG_PATH)) {
     throw new Error(
@@ -68,4 +75,42 @@ export async function assertServerReachable(): Promise<void> {
   throw new Error(
     `Test Jellyfin did not become ready within 60s at ${url} (last error: ${lastError}).\n${REBUILD_HINT}`,
   );
+}
+
+/**
+ * Verify the server can actually serve an audio file, not just its metadata.
+ *
+ * A stale container keeps all its library metadata (baked into the image) but
+ * loses access to the music files when its bind mount source disappears. That
+ * failure is invisible to `assertServerReachable` and surfaces later as every
+ * sync scenario failing with "Download failed: 404 Not Found". This check turns
+ * that into one actionable error at setup time.
+ */
+export async function assertMediaDownloadable(): Promise<void> {
+  const { url, apiKey } = readServerConfig();
+  const auth = { 'X-Emby-Token': apiKey };
+
+  const listRes = await fetch(
+    `${url}/Items?IncludeItemTypes=Audio&Recursive=true&Limit=1`,
+    { headers: auth },
+  );
+  if (!listRes.ok) {
+    throw new Error(`Could not list audio items (HTTP ${listRes.status}).\n${REBUILD_HINT}`);
+  }
+  const list = (await listRes.json()) as { Items?: Array<{ Id: string }> };
+  const trackId = list.Items?.[0]?.Id;
+  if (!trackId) {
+    throw new Error(`Test Jellyfin has no audio items — library is empty.\n${REBUILD_HINT}`);
+  }
+
+  const dlRes = await fetch(`${url}/Items/${trackId}/Download`, {
+    headers: { ...auth, Range: 'bytes=0-0' },
+  });
+  if (!dlRes.ok) {
+    throw new Error(
+      `Test Jellyfin returned HTTP ${dlRes.status} downloading track ${trackId}.\n${STALE_MOUNT_HINT}`,
+    );
+  }
+  // Drain the (tiny) body so the socket is released.
+  await dlRes.arrayBuffer().catch(() => undefined);
 }
