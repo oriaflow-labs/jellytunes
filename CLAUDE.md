@@ -75,11 +75,18 @@ There is no changelog or "what's new" field in snapcraft.yaml, and the store lis
 
 ## Git Integration
 
-`main` is a **rebase-only trunk** — its history stays linear. Task branches are
-integrated by the studio-os pipeline with `python task.py wt merge <TASK_ID>`
-(`fetch` → `git rebase main` → `git merge --ff-only`), which replays each of the
-branch's commits onto `main`. **Never `git merge <branch>` by hand** — a merge
-commit breaks the linear history and nothing in the pipeline expects one.
+`main` is a **rebase-only trunk** — its history stays linear, no merge commits.
+Integrate a feature branch by rebasing it onto `main` and fast-forwarding:
+
+```bash
+git fetch origin
+git rebase origin/main        # from the feature branch
+git checkout main && git merge --ff-only <branch>
+```
+
+**Never `git merge <branch>` without `--ff-only`** — a merge commit breaks the
+linear history. To undo one that already landed: `git update-ref refs/heads/main
+<linear-tip> <merge-sha>` then `git push --force-with-lease`.
 
 ## Testing Strategy
 
