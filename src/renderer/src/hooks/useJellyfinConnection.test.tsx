@@ -261,4 +261,129 @@ describe('useJellyfinConnection', () => {
       expect(onConnected).toHaveBeenCalledWith('https://jellyfin.test', 'test-key', 'user-1');
     });
   });
+
+  // ORAIN-0564 SO-1 — username+password authentication flow.
+  describe('connectWithPassword', () => {
+    it('POSTs to /Users/AuthenticateByName with {Username, Pw} and resolves User.Id + AccessToken', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            AccessToken: 'pw-token-abc',
+            User: { Id: 'user-1', Name: 'Alice' },
+          }),
+      });
+
+      const onConnected = vi.fn();
+      const { result } = renderHook(() => useJellyfinConnection(onConnected));
+
+      await act(async () => {
+        await result.current.connectWithPassword('https://jellyfin.test', 'alice', 'secret');
+      });
+
+      // Single fetch call to /Users/AuthenticateByName
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, init] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://jellyfin.test/Users/AuthenticateByName');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body)).toEqual({ Username: 'alice', Pw: 'secret' });
+      // Authorization header is MediaBrowser WITHOUT Token (no phantom device)
+      const auth = init.headers.Authorization as string;
+      expect(auth.startsWith('MediaBrowser ')).toBe(true);
+      expect(auth).not.toMatch(/Token="/);
+
+      expect(result.current.isConnected).toBe(true);
+      expect(onConnected).toHaveBeenCalledWith('https://jellyfin.test', 'pw-token-abc', 'user-1');
+    });
+
+    it('blocks http:// URLs and never calls fetch', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('http://jellyfin.test', 'alice', 'secret');
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(false);
+      expect(result.current.error).toMatch(/https/i);
+    });
+
+    it('surfaces a generic 401 error without auto-retrying', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized' });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('https://jellyfin.test', 'alice', 'wrong');
+      });
+
+      // Single fetch attempt — no retry loop
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.current.isConnected).toBe(false);
+      expect(result.current.error).toBeTruthy();
+      // Same generic message whether user exists or not
+      expect(result.current.error).toBe('Invalid username or password');
+    });
+
+    it('persists session as {authKind:"password", url, accessToken, userId} — never the password', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            AccessToken: 'pw-token-abc',
+            User: { Id: 'user-1', Name: 'Alice' },
+          }),
+      });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('https://jellyfin.test', 'alice', 'secret');
+      });
+
+      expect(mockApi.saveSession).toHaveBeenCalledTimes(1);
+      const persisted = JSON.parse(mockApi.saveSession.mock.calls[0][0]);
+      expect(persisted).toEqual({
+        authKind: 'password',
+        url: 'https://jellyfin.test',
+        accessToken: 'pw-token-abc',
+        userId: 'user-1',
+      });
+      expect(persisted.password).toBeUndefined();
+      expect(persisted.Pw).toBeUndefined();
+    });
+
+    it('persists session as {authKind:"apikey"} when connecting via API key (no password field)', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ ServerName: 'Test Server' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ Id: 'user-1', Name: 'Test User' }),
+        });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
+      });
+
+      expect(mockApi.saveSession).toHaveBeenCalledTimes(1);
+      const persisted = JSON.parse(mockApi.saveSession.mock.calls[0][0]);
+      expect(persisted).toEqual({
+        authKind: 'apikey',
+        url: 'https://jellyfin.test',
+        apiKey: 'test-key',
+        userId: 'user-1',
+      });
+    });
+  });
 });
