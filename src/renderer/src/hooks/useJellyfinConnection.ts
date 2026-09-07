@@ -71,10 +71,27 @@ async function clearSession(): Promise<void> {
   }
 }
 
-/** ORAIN-0564 SO-1: refuse to send credentials over plain HTTP. */
+/**
+ * ORAIN-0564 SO-1: refuse to send credentials over plain HTTP.
+ *
+ * Loopback hosts are exempt: `http://localhost` / `http://127.0.0.1` / `http://[::1]`
+ * never leave the machine, so there is no plaintext-on-the-wire exposure. This
+ * mirrors the browser "potentially trustworthy origin" rule (WHATWG secure
+ * contexts, RFC 6761) and lets the E2E suite drive the password flow against its
+ * local containers without a TLS terminator.
+ */
 export function isSecureAuthUrl(url: string): boolean {
   try {
-    return new URL(url).protocol === 'https:';
+    const { protocol, hostname } = new URL(url);
+    if (protocol === 'https:') return true;
+    if (protocol !== 'http:') return false;
+    const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return (
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '::1' ||
+      /^127(?:\.\d{1,3}){3}$/.test(host)
+    );
   } catch {
     return false;
   }

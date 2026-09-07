@@ -83,6 +83,14 @@ majors:
 `.server.<version>.json`; the E10 spec pulls them through `login()`'s
 `serverConfig` to switch the LoginScreen into password mode.
 
+Password auth normally refuses a plain-`http://` server URL (credentials must
+not cross the wire in the clear). The containers are served at
+`http://127.0.0.1:809{6,7}`, so `isSecureAuthUrl()` exempts loopback hosts
+(`localhost`, `127.0.0.0/8`, `[::1]`) — the browser "potentially trustworthy
+origin" rule. E10 therefore exercises the real password flow without a TLS
+terminator; the non-loopback `http://` block stays covered by
+`useJellyfinConnection.test.tsx`.
+
 The select-all confirmation dialog (select-all-confirm-dialog) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
 
 ## Known Issues

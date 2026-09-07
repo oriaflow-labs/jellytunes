@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useJellyfinConnection } from './useJellyfinConnection';
+import { useJellyfinConnection, isSecureAuthUrl } from './useJellyfinConnection';
 
 const mockApi = {
   saveSession: vi.fn().mockResolvedValue({ success: true }),
@@ -302,7 +302,7 @@ describe('useJellyfinConnection', () => {
       expect(onConnected).toHaveBeenCalledWith('https://jellyfin.test', 'pw-token-abc', 'user-1');
     });
 
-    it('blocks http:// URLs and never calls fetch', async () => {
+    it('blocks non-loopback http:// URLs and never calls fetch', async () => {
       mockApi.loadSession.mockResolvedValue(null);
 
       const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
@@ -314,6 +314,23 @@ describe('useJellyfinConnection', () => {
       expect(mockFetch).not.toHaveBeenCalled();
       expect(result.current.isConnected).toBe(false);
       expect(result.current.error).toMatch(/https/i);
+    });
+
+    it('allows password auth over http:// to a loopback host (E2E containers)', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ AccessToken: 'pw-token-abc', User: { Id: 'user-1' } }),
+      });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('http://127.0.0.1:8096', 'alice', 'secret');
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(result.current.isConnected).toBe(true);
     });
 
     it('surfaces a generic 401 error without auto-retrying', async () => {
@@ -505,6 +522,28 @@ describe('useJellyfinConnection', () => {
       expect(result.current.error).toMatch(/Stored session URL is not HTTPS/);
       expect(onConnected).not.toHaveBeenCalled();
       expect(mockApi.saveSession).not.toHaveBeenCalled();
+    });
+  });
+
+  // ORAIN-0564: loopback hosts are exempt from the HTTPS-only credential gate
+  // (browser "potentially trustworthy origin" rule) so the E2E suite can drive
+  // the password flow against its local containers.
+  describe('isSecureAuthUrl', () => {
+    it.each([
+      ['https://jellyfin.example.com', true],
+      ['https://192.168.1.10:8096', true],
+      ['http://localhost:8096', true],
+      ['http://sub.localhost', true],
+      ['http://127.0.0.1:8096', true],
+      ['http://127.5.6.7', true],
+      ['http://[::1]:8097', true],
+      ['http://jellyfin.example.com', false],
+      ['http://192.168.1.10:8096', false],
+      ['http://10.0.0.5', false],
+      ['ftp://localhost', false],
+      ['not a url', false],
+    ])('%s → %s', (url, expected) => {
+      expect(isSecureAuthUrl(url)).toBe(expected);
     });
   });
 });
