@@ -69,13 +69,17 @@ export interface ClearSessionInput {
  * `session-handlers.test.ts`.
  */
 export async function saveSession(input: SaveSessionInput): Promise<SaveSessionResult> {
-  // STUB: full implementation lands in the GREEN commit. The current
-  // shape is enough for the contract (null provider -> encryption_unavailable)
-  // but every other branch is intentionally absent so the RED tests fail.
   if (!input.provider) {
     return { success: false, reason: 'encryption_unavailable' };
   }
-  return { success: false, reason: 'storage_error' };
+  try {
+    const encrypted = await input.provider.encrypt(input.plaintext);
+    input.fs.writeFileSync(input.filePath, encrypted);
+    return { success: true };
+  } catch (e) {
+    input.log.error('Failed to save session:', e);
+    return { success: false, reason: 'storage_error' };
+  }
 }
 
 /**
@@ -90,15 +94,39 @@ export async function saveSession(input: SaveSessionInput): Promise<SaveSessionR
  *
  * Never throws.
  */
-export async function loadSession(_input: LoadSessionInput): Promise<string | null> {
-  // STUB: full implementation lands in the GREEN commit.
-  return null;
+export async function loadSession(input: LoadSessionInput): Promise<string | null> {
+  if (!input.provider) {
+    return null;
+  }
+  try {
+    if (!input.fs.existsSync(input.filePath)) return null;
+    const raw = input.fs.readFileSync(input.filePath);
+    const decrypted = await input.provider.decrypt(raw);
+    if (decrypted === null && raw.length > 0) {
+      input.log.warn('Session file present but unreadable by active provider; clearing');
+      try {
+        input.fs.unlinkSync(input.filePath);
+      } catch {
+        /* best effort */
+      }
+    }
+    return decrypted;
+  } catch (err) {
+    input.log.error('Failed to load session:', err);
+    return null;
+  }
 }
 
 /**
  * Best-effort unlink of the session file. Errors are logged but not
  * surfaced — the renderer never awaits a meaningful return value.
  */
-export async function clearSession(_input: ClearSessionInput): Promise<void> {
-  // STUB: full implementation lands in the GREEN commit.
+export async function clearSession(input: ClearSessionInput): Promise<void> {
+  try {
+    if (input.fs.existsSync(input.filePath)) {
+      input.fs.unlinkSync(input.filePath);
+    }
+  } catch (err) {
+    input.log.error('Failed to clear session:', err);
+  }
 }

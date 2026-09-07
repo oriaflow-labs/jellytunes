@@ -13,6 +13,11 @@ import { createMainApiClient } from './api-client';
 import { detectSnapEnv, type SnapEnv } from './snap-env';
 import { buildUpdateCheckResult, type UpdateCheckResult } from './update-checker';
 import { createSecureStorageProvider, type StorageProvider } from './secure-storage';
+import {
+  saveSession as saveSessionHandler,
+  loadSession as loadSessionHandler,
+  clearSession as clearSessionHandler,
+} from './session-handlers';
 import { createSecretStore } from './secret-store';
 import { createSecretToolRunner } from './secret-tool.adapter';
 import { createElectronLogger } from './logger-types';
@@ -747,58 +752,30 @@ export async function initSecureStorageProvider(): Promise<StorageProvider | nul
 }
 
 ipcMain.handle('session:save', async (_event, plaintext: string) => {
-  try {
-    const provider = sessionStorageProvider;
-    if (!provider) {
-      return { success: false, reason: 'encryption_unavailable' as const };
-    }
-    const encrypted = await provider.encrypt(plaintext);
-    fs.writeFileSync(SESSION_FILE(), encrypted);
-    return { success: true };
-  } catch (e) {
-    log.error('Failed to save session:', e);
-    // Typed discriminant — `'storage_error'` is reserved for runtime
-    // failures distinct from the boot-time `'encryption_unavailable'`
-    // case. The renderer branches on this exact value.
-    return { success: false, reason: 'storage_error' as const };
-  }
+  // ORAIN-0564 SO-2: extracted to `./session-handlers.ts` for testability.
+  // The contract is shape-agnostic — the renderer is responsible for never
+  // including the password in `plaintext` (SO-1 strips it). The main
+  // process does not log the plaintext.
+  return saveSessionHandler({
+    provider: sessionStorageProvider,
+    filePath: SESSION_FILE(),
+    plaintext,
+    fs,
+    log,
+  });
 });
 
 ipcMain.handle('session:load', async () => {
-  try {
-    const provider = sessionStorageProvider;
-    if (!provider) {
-      return null;
-    }
-    const filePath = SESSION_FILE();
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath);
-    const decrypted = await provider.decrypt(raw);
-    // Stale-blob safety: the active provider couldn't read this file
-    // (e.g. it was encrypted by the previous safeStorage backend under
-    // snap and secret-tool can't read it). Drop to login — never throw.
-    if (decrypted === null && raw.length > 0) {
-      log.warn('Session file present but unreadable by active provider; clearing');
-      try {
-        fs.unlinkSync(filePath);
-      } catch {
-        /* best effort */
-      }
-    }
-    return decrypted;
-  } catch (err) {
-    log.error('Failed to load session:', err);
-    return null;
-  }
+  return loadSessionHandler({
+    provider: sessionStorageProvider,
+    filePath: SESSION_FILE(),
+    fs,
+    log,
+  });
 });
 
 ipcMain.handle('session:clear', () => {
-  try {
-    const filePath = SESSION_FILE();
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch (err) {
-    log.error('Failed to clear session:', err);
-  }
+  return clearSessionHandler({ filePath: SESSION_FILE(), fs, log });
 });
 
 // ORAIN-0590: tell the renderer whether an OS-backed encryption provider
