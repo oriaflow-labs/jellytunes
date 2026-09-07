@@ -147,7 +147,7 @@ describe('useJellyfinConnection', () => {
       });
 
       expect(mockApi.saveSession).toHaveBeenCalledWith(
-        JSON.stringify({ url: 'https://jellyfin.test', apiKey: 'test-key', userId: 'user-1' }),
+        JSON.stringify({ authKind: 'apikey', url: 'https://jellyfin.test', apiKey: 'test-key', userId: 'user-1' }),
       );
       expect(onConnected).toHaveBeenCalledWith('https://jellyfin.test', 'test-key', 'user-1');
     });

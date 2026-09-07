@@ -39,6 +39,10 @@ afterEach(() => {
 });
 
 describe('LoginScreen', () => {
+  // ORAIN-0564 SO-1: these were written when API key mode was the only mode.
+  // They now exercise the API-key branch explicitly via `initialMode="apikey"`.
+  // The default mode is "password" — covered by the new "password mode" describe block.
+
   // 1. renders with URL and API key inputs visible
   it('renders with URL and API key inputs visible', () => {
     const props = {
@@ -48,6 +52,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     expect(screen.getByTestId('server-url-input')).toBeInTheDocument();
@@ -63,6 +68,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     const connectButton = screen.getByTestId('connect-button');
@@ -82,6 +88,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     const form = document.querySelector('form') as HTMLFormElement;
@@ -109,7 +116,7 @@ describe('LoginScreen', () => {
     expect(call[1]).toBe('test-api-key-123');
   });
 
-  // 4. error visible when error prop is a string
+  // 4. error visible when error prop is a string (renders in password mode too)
   it('shows error message when error prop is a string', () => {
     const props = {
       urlInput: '',
@@ -123,7 +130,7 @@ describe('LoginScreen', () => {
     expect(screen.getByTestId('error-message')).toHaveTextContent('Invalid credentials');
   });
 
-  // 5. API key helper text visible
+  // 5. API key helper text visible (API-key mode only)
   it('shows API key helper text', () => {
     const props = {
       urlInput: '',
@@ -132,12 +139,13 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
   });
 
-  // 6. English strings displayed (default locale)
+  // 6. English strings displayed (API-key mode)
   it('displays English strings', () => {
     const props = {
       urlInput: '',
@@ -146,6 +154,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     // Header should be in English
@@ -157,7 +166,7 @@ describe('LoginScreen', () => {
     // API Key label in English
     expect(screen.getByText('API Key')).toBeInTheDocument();
     // Button should be in English
-    expect(screen.getByRole('button')).toHaveTextContent('Connect');
+    expect(screen.getAllByRole('button')[0]).toHaveTextContent('Connect');
     // Helper text should be in English
     expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
   });

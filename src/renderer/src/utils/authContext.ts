@@ -88,6 +88,22 @@ export function getAuthorizationHeader(apiKey: string): string {
   });
 }
 
+/**
+ * ORAIN-0564 SO-1: build an Authorization header for the *pre-auth*
+ * `AuthenticateByName` call. The call has no token yet — emitting
+ * `Token=""` would create a phantom device on the server's dashboard.
+ * Same MediaBrowser shape, just without the `Token` field.
+ */
+export function getAuthenticateHeader(): string {
+  const ctx = getRenderAuthContext();
+  return buildAuthHeader({
+    client: CLIENT_NAME_DEFAULT,
+    device: ctx.device,
+    deviceId: ctx.deviceId,
+    version: ctx.version,
+  });
+}
+
 function guessDeviceName(): string {
   // The browser doesn't reliably expose the host's hostname to the renderer;
   // fall back to a literal. Jellyfin's dashboard tolerates any value here —

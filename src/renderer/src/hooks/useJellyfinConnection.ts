@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { JellyfinConfig, JellyfinUser } from '../appTypes';
 import { jellyfinHeaders } from '../utils/jellyfin';
+import { getAuthenticateHeader } from '../utils/authContext';
 
 interface ConnectionState {
   jellyfinConfig: JellyfinConfig | null;
@@ -15,20 +16,27 @@ interface ConnectionState {
   apiKeyInput: string;
 }
 
+/**
+ * ORAIN-0564 SO-1: a saved session is now keyed by `authKind`. SO-2 will
+ * take over persistence; this hook only defines the wire shape.
+ *
+ *   - apikey:    { authKind: 'apikey',    url, apiKey, userId }
+ *   - password:  { authKind: 'password',  url, accessToken, userId }   // NEVER the password
+ */
 interface SavedSession {
+  authKind?: 'apikey' | 'password';
   url: string;
-  apiKey: string;
+  apiKey?: string;
+  accessToken?: string;
   userId?: string;
 }
 
 // Session is stored encrypted via main-process safeStorage IPC (not localStorage)
 async function saveSession(
-  url: string,
-  apiKey: string,
-  userId: string,
+  payload: SavedSession & { userId: string },
 ): Promise<{ success: boolean; reason?: string }> {
   try {
-    const result = await window.api.saveSession(JSON.stringify({ url, apiKey, userId }));
+    const result = await window.api.saveSession(JSON.stringify(payload));
     if (!result.success) {
       window.api.logError(`Session save failed: ${result.reason ?? 'unknown'}`);
       return result;
@@ -45,7 +53,11 @@ async function loadSession(): Promise<SavedSession | null> {
     const raw = await window.api.loadSession();
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed.url && parsed.apiKey ? parsed : null;
+    if (!parsed.url) return null;
+    // Either an apiKey (apikey auth) OR an accessToken (password auth) must
+    // be present for the session to be usable.
+    if (!parsed.apiKey && !parsed.accessToken) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -56,6 +68,15 @@ async function clearSession(): Promise<void> {
     await window.api.clearSession();
   } catch {
     /* ignore */
+  }
+}
+
+/** ORAIN-0564 SO-1: refuse to send credentials over plain HTTP. */
+export function isSecureAuthUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -82,7 +103,7 @@ export function useJellyfinConnection(
     // `useSnapPermissions`, which doesn't need a feature to fail first —
     // the old flag was raised in the same update that set `isConnected`,
     // which unmounted the only screen that rendered it.
-    await saveSession(url, apiKey, userId);
+    await saveSession({ authKind: 'apikey', url, apiKey, userId });
     setState((prev) => ({
       ...prev,
       jellyfinConfig: { url, apiKey, userId },
@@ -102,12 +123,21 @@ export function useJellyfinConnection(
         return;
       }
 
-      const { url, apiKey, userId } = session;
+      const { url, apiKey, accessToken, userId } = session;
       const normalized = url.replace(/\/$/, '');
-      setState((prev) => ({ ...prev, urlInput: normalized, apiKeyInput: apiKey }));
+      // ORAIN-0564 SO-1: SO-2 will own auto-reconnect for password sessions.
+      // For this iteration we only auto-reconnect apikey sessions, which
+      // already work today. Password sessions keep `urlInput` populated so
+      // the user can re-authenticate, but we don't try to re-validate the
+      // server or restore the connection.
+      setState((prev) => ({
+        ...prev,
+        urlInput: normalized,
+        apiKeyInput: apiKey ?? '',
+      }));
 
-      if (userId) {
-        // Fast path: we have userId, just validate server is reachable
+      if (userId && apiKey) {
+        // Fast path: we have userId + apiKey, just validate server is reachable
         void fetch(`${normalized}/System/Info/Public`, { signal: AbortSignal.timeout(5000) })
           .then((r) =>
             r.ok
@@ -122,9 +152,14 @@ export function useJellyfinConnection(
               error: 'Could not reconnect. Please log in again.',
             }));
           });
+      } else if (userId && accessToken) {
+        // Password session: we don't auto-reconnect here (that's SO-2's job).
+        // Just drop `isConnecting` so the login screen renders with the
+        // remembered URL.
+        setState((prev) => ({ ...prev, isConnecting: false }));
       } else {
         // Legacy session without userId — try /Users/Me
-        void connectToJellyfin(normalized, apiKey);
+        void connectToJellyfin(normalized, apiKey ?? '');
       }
     });
   }, []); // intentional: run once on mount
@@ -189,6 +224,87 @@ export function useJellyfinConnection(
     }
   };
 
+  /**
+   * ORAIN-0564 SO-1: connect by username + password.
+   *
+   * Refuses to transmit over `http://` (returns an error and skips the
+   * request). The 401 path is generic — we don't leak whether the user
+   * exists, and there is no retry loop: the caller decides what to do.
+   */
+  const connectWithPassword = async (
+    url: string,
+    username: string,
+    password: string,
+  ): Promise<boolean> => {
+    setState((prev) => ({ ...prev, isConnecting: true, error: null }));
+    try {
+      if (!isSecureAuthUrl(url)) {
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: 'HTTPS is required for password authentication.',
+        }));
+        return false;
+      }
+      const normalizedUrl = url.replace(/\/$/, '');
+      const authHeader = getAuthenticateHeader();
+      const response = await fetch(`${normalizedUrl}/Users/AuthenticateByName`, {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ Username: username, Pw: password }),
+      });
+      if (!response.ok) {
+        // Generic message — we deliberately don't reveal whether the user
+        // exists or the password was wrong.
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: 'Invalid username or password',
+        }));
+        return false;
+      }
+      const data = await response.json();
+      const accessToken: string | undefined = data.AccessToken;
+      const userId: string | undefined = data.User?.Id;
+      if (!accessToken || !userId) {
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: 'Authentication response was incomplete.',
+        }));
+        return false;
+      }
+      // Persist the session WITHOUT the password. The accessToken is the
+      // secret from now on.
+      await saveSession({
+        authKind: 'password',
+        url: normalizedUrl,
+        accessToken,
+        userId,
+      });
+      setState((prev) => ({
+        ...prev,
+        jellyfinConfig: { url: normalizedUrl, apiKey: accessToken, userId },
+        userId,
+        isConnected: true,
+        isConnecting: false,
+        error: null,
+      }));
+      onConnected(normalizedUrl, accessToken, userId);
+      return true;
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        isConnecting: false,
+        error: err instanceof Error ? err.message : 'Connection failed',
+      }));
+      return false;
+    }
+  };
+
   const handleUserSelect = async (user: JellyfinUser): Promise<void> => {
     if (!state.pendingConfig) return;
     const { url, apiKey } = state.pendingConfig;
@@ -221,6 +337,7 @@ export function useJellyfinConnection(
   return {
     ...state,
     connectToJellyfin,
+    connectWithPassword,
     handleUserSelect,
     handleUserSelectorCancel,
     disconnect,

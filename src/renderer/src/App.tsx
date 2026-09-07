@@ -731,6 +731,12 @@ function App(): JSX.Element {
   useEffect(() => {
     void window.api.isSessionStorageAvailable().then(setSessionStorageAvailable);
   }, []);
+  // ORAIN-0564 SO-1: username + password are local input state on the login
+  // screen. The hook never receives them — only `connectWithPassword` is
+  // called with the live values when the form submits. This keeps the
+  // password out of any persistent React state.
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
 
   const screen = ((): JSX.Element => {
     if (!connection.isConnected && !connection.isConnecting && !connection.showUserSelector) {
@@ -738,10 +744,17 @@ function App(): JSX.Element {
         <LoginScreen
           urlInput={connection.urlInput}
           apiKeyInput={connection.apiKeyInput}
+          usernameInput={usernameInput}
+          passwordInput={passwordInput}
           error={connection.error}
           onUrlChange={connection.setUrlInput}
           onApiKeyChange={connection.setApiKeyInput}
+          onUsernameChange={setUsernameInput}
+          onPasswordChange={setPasswordInput}
           onSubmit={connection.connectToJellyfin}
+          onPasswordSubmit={(url, username, password) => {
+            void connection.connectWithPassword(url, username, password);
+          }}
         />
       );
     }

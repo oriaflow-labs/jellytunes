@@ -72,6 +72,22 @@ describe('buildAuthHeader', () => {
     const header = buildAuthHeader({ token: 'tok', deviceId: '', device: 'x' });
     expect(header).toBe('MediaBrowser Token="tok", Device="x"');
   });
+
+  it('omits Token entirely when not provided (ORAIN-0564 SO-1: AuthenticateByName pre-auth flow)', () => {
+    // Pre-auth calls (POST /Users/AuthenticateByName) have no token yet.
+    // Emitting `Token=""` would create a phantom device on the server's
+    // dashboard; we must omit the field.
+    const header = buildAuthHeader({
+      client: 'JellyTunes',
+      device: 'desktop',
+      deviceId: 'dev-1',
+      version: '1.0.0',
+    });
+    expect(header).toBe(
+      'MediaBrowser Client="JellyTunes", Device="desktop", DeviceId="dev-1", Version="1.0.0"',
+    );
+    expect(header).not.toMatch(/Token=/);
+  });
 });
 
 describe('parseAuthHeader', () => {

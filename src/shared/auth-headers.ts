@@ -22,7 +22,14 @@ export const CLIENT_NAME_DEFAULT = 'JellyTunes';
 export const DEFAULT_DEVICE_NAME = 'Unknown';
 
 export interface BuildAuthHeaderInput {
-  token: string;
+  /**
+   * ORAIN-0564 SO-1: token is now optional so that pre-auth flows
+   * (e.g. `POST /Users/AuthenticateByName`) can render a header without
+   * a Token. Emitting `Token=""` would register a phantom device on the
+   * server's dashboard, so we omit the field entirely when the caller
+   * has no token yet.
+   */
+  token?: string;
   client?: string;
   device?: string;
   deviceId?: string;
@@ -37,7 +44,10 @@ export interface BuildAuthHeaderInput {
  * create a phantom device on the server's dashboard.
  */
 export function buildAuthHeader(input: BuildAuthHeaderInput): string {
-  const parts: string[] = [`Token="${sanitizeValue(input.token)}"`];
+  const parts: string[] = [];
+  // Token is omitted when not provided. Never emit `Token=""` — that would
+  // register a phantom device on the server's "Active devices" dashboard.
+  if (input.token) parts.push(`Token="${sanitizeValue(input.token)}"`);
 
   // Emit each optional field only when the caller provides it. We deliberately
   // do NOT fall back to module-level defaults (CLIENT_NAME_DEFAULT, etc.)
