@@ -173,5 +173,8 @@ const FINAL_URL = (() => {
   return URL_BASE;
 })();
 
-writeFileSync(OUT_FILE, `${JSON.stringify({ url: FINAL_URL, apiKey, userId }, null, 2)}\n`);
+writeFileSync(
+  OUT_FILE,
+  `${JSON.stringify({ url: FINAL_URL, apiKey, userId, username: USER, password: PASS }, null, 2)}\n`,
+);
 console.log(`Provisioned. Wrote ${OUT_FILE} (provisioned via ${URL_BASE}, final URL ${FINAL_URL})`);
