@@ -6,6 +6,12 @@ export interface ServerConfig {
   url: string;
   apiKey: string;
   userId: string;
+  // ORAIN-0564 SO-3: provision.mjs writes the `e2e` / `e2e-password`
+  // credentials used by the password-mode login flow. Optional here because
+  // apikey-only test runs (E1, the existing 9 scenarios) do not need them;
+  // the password harness in app.ts throws when they are absent.
+  username?: string;
+  password?: string;
 }
 
 const REBUILD_HINT =

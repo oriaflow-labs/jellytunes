@@ -93,9 +93,46 @@ export const test = base.extend<
 
 export { expect } from '@playwright/test';
 
-export async function login(page: Page, serverConfig: ServerConfig): Promise<void> {
+/**
+ * ORAIN-0564 SO-3: which auth flow `login()` drives.
+ *
+ * - `'apikey'` (default) — E1 regression sentinel and every existing scenario.
+ *   Fills the apikey form, then handles the user selector if the server
+ *   returns a public user list instead of identifying the user directly.
+ * - `'password'` — the new SO-1 username+password flow. Switches the
+ *   LoginScreen into password mode, fills the three fields, and goes
+ *   straight to the library (the accessToken identifies the user, so no
+ *   selector).
+ */
+export type AuthMode = 'apikey' | 'password';
+
+export async function login(
+  page: Page,
+  serverConfig: ServerConfig,
+  mode: AuthMode = 'apikey',
+): Promise<void> {
   const { url, apiKey } = serverConfig;
   await page.getByTestId('auth-screen').waitFor({ state: 'visible', timeout: 30_000 });
+
+  if (mode === 'password') {
+    const { username, password } = serverConfig;
+    if (!username || !password) {
+      throw new Error(
+        "login(page, serverConfig, 'password') requires serverConfig.username and " +
+          'serverConfig.password. provision.mjs writes both — re-run ' +
+          '`bash tests/e2e/docker/rebuild.sh <version>` to regenerate ' +
+          '.server.<version>.json.',
+      );
+    }
+    await page.getByTestId('mode-toggle-password').click();
+    await page.getByTestId('server-url-input').fill(url);
+    await page.getByTestId('username-input').fill(username);
+    await page.getByTestId('password-input').fill(password);
+    await page.getByTestId('connect-button').click();
+    await page.getByTestId('library-content').waitFor({ state: 'visible', timeout: 30_000 });
+    return;
+  }
+
   await page.getByTestId('server-url-input').fill(url);
   await page.getByTestId('api-key-input').fill(apiKey);
   await page.getByTestId('connect-button').click();
