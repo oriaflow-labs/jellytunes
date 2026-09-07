@@ -179,3 +179,75 @@ describe('LoginScreen', () => {
     expect(screen.queryByTestId('snap-keyring-banner')).not.toBeInTheDocument();
   });
 });
+
+// ORAIN-0564 SO-1 — username+password mode in LoginScreen.
+// The recommended runtime path is password mode; API key is the advanced
+// fallback for administrators (mirrors the design constraint in the spec).
+describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
+  const baseProps = () => ({
+    urlInput: '',
+    apiKeyInput: '',
+    usernameInput: '',
+    passwordInput: '',
+    error: null as string | null,
+    onUrlChange: vi.fn(),
+    onApiKeyChange: vi.fn(),
+    onUsernameChange: vi.fn(),
+    onPasswordChange: vi.fn(),
+    onSubmit: vi.fn(),
+    onPasswordSubmit: vi.fn(),
+  });
+
+  it('renders password mode by default (username + password inputs visible without clicking a toggle)', () => {
+    render(<LoginScreen {...baseProps()} />);
+    expect(screen.getByTestId('username-input')).toBeInTheDocument();
+    expect(screen.getByTestId('password-input')).toBeInTheDocument();
+  });
+
+  it('renders a visible toggle to switch to API key mode, labelled as advanced', () => {
+    render(<LoginScreen {...baseProps()} />);
+    const toggle = screen.getByTestId('mode-toggle-apikey');
+    expect(toggle).toBeInTheDocument();
+    expect(toggle.textContent ?? '').toMatch(/advanced|administrator|admin/i);
+  });
+
+  it('submits with (url, username, password) when password form is submitted', async () => {
+    const props = baseProps();
+    render(<LoginScreen {...props} />);
+
+    const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
+    const usernameInput = screen.getByTestId('username-input') as HTMLInputElement;
+    const passwordInput = screen.getByTestId('password-input') as HTMLInputElement;
+
+    await act(async () => {
+      urlInput.value = 'https://jellyfin.example.com';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+      usernameInput.value = 'alice';
+      usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      passwordInput.value = 's3cret';
+      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = document.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+    });
+
+    expect(props.onPasswordSubmit).toHaveBeenCalledTimes(1);
+    const call = props.onPasswordSubmit.mock.calls[0];
+    expect(call[0]).toBe('https://jellyfin.example.com');
+    expect(call[1]).toBe('alice');
+    expect(call[2]).toBe('s3cret');
+  });
+
+  it('still exposes the API-key inputs when the toggle is activated (default password mode is recommended)', () => {
+    render(<LoginScreen {...baseProps()} />);
+    // Password mode is the default; API-key mode needs an explicit toggle click.
+    const toggle = screen.getByTestId('mode-toggle-apikey');
+    act(() => {
+      toggle.click();
+    });
+    expect(screen.getByTestId('api-key-input')).toBeInTheDocument();
+    expect(screen.queryByTestId('username-input')).not.toBeInTheDocument();
+  });
+});
