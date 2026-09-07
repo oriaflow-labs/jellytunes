@@ -9,7 +9,9 @@ services:
     volumes:
       - ./fixtures/music:/media/music:ro
     healthcheck:
-      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8097/System/Info/Public']
+      # Jellyfin listens on 8096 *inside* the container; 8097 is only the host
+      # mapping. The healthcheck runs in-container, so it must hit 8096.
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8096/System/Info/Public']
       interval: 2s
       timeout: 3s
       retries: 15

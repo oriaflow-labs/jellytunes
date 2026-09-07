@@ -7,7 +7,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
-import { readServerConfig, type ServerConfig } from './server';
+import { assertServerMajor, readServerConfig, type ServerConfig } from './server';
 
 interface AppFixtures {
   userDataDir: string;
@@ -17,16 +17,37 @@ interface AppFixtures {
   page: Page;
 }
 
+// Remembers which versions have already been version-checked in this process
+// so the preflight costs one HTTP round-trip per version, not one per test.
+const verifiedVersions = new Set<string>();
+
 export const test = base.extend<
   AppFixtures & {
     jellyfinVersion: 'v11' | 'v12';
     jellyfinExpectedMajor: number;
+    serverVersionGuard: void;
   }
 >({
   // Identifies which .server.<version>.json the fixtures should resolve.
   // Each project in playwright.config.ts overrides this via `use.jellyfinVersion`.
   jellyfinVersion: ['v11', { option: true }],
   jellyfinExpectedMajor: [10, { option: true }],
+
+  // Preflight: prove the server answering on this project's URL really is the
+  // expected Jellyfin major before any test connects to it. globalSetup does
+  // this too, but only for single-project runs — a multi-project run (plain
+  // `pnpm test:e2e`) resolves no target and skips it, so without this fixture
+  // a misrouted .server.<version>.json would let v12 specs go green against v11.
+  serverVersionGuard: [
+    async ({ jellyfinVersion, jellyfinExpectedMajor }, use) => {
+      if (!verifiedVersions.has(jellyfinVersion)) {
+        await assertServerMajor(jellyfinVersion, jellyfinExpectedMajor);
+        verifiedVersions.add(jellyfinVersion);
+      }
+      await use();
+    },
+    { auto: true },
+  ],
 
   // Electron honours Chromium's --user-data-dir, which relocates
   // app.getPath('userData') and with it jellytunes.db, session.enc and
