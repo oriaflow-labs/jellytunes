@@ -153,10 +153,40 @@ export function useJellyfinConnection(
             }));
           });
       } else if (userId && accessToken) {
-        // Password session: we don't auto-reconnect here (that's SO-2's job).
-        // Just drop `isConnecting` so the login screen renders with the
-        // remembered URL.
-        setState((prev) => ({ ...prev, isConnecting: false }));
+        // ORAIN-0564 SO-2: password sessions now auto-reconnect. We validate
+        // the accessToken against /System/Info/Public by sending the same
+        // MediaBrowser Authorization header every other Jellyfin request uses
+        // — without this, /System/Info/Public would only prove the server is
+        // reachable, not that the stored token is still valid. On success,
+        // connectWithUser repurposes the accessToken as the `apiKey` field
+        // of jellyfinConfig — downstream code already understands that
+        // slot's value is just "the credential the server authenticates
+        // with".
+        //
+        // Runtime assumption (test asserts): the request to
+        // /System/Info/Public carries `Authorization: MediaBrowser
+        // Token="<accessToken>"`. A stored token that fails this check is
+        // cleared and we surface the same generic "Could not reconnect"
+        // message as the apikey branch — we deliberately don't distinguish
+        // server-down from token-revoked, because that distinction would
+        // leak which user exists.
+        void fetch(`${normalized}/System/Info/Public`, {
+          signal: AbortSignal.timeout(5000),
+          headers: jellyfinHeaders(accessToken),
+        })
+          .then((r) =>
+            r.ok
+              ? connectWithUser(normalized, accessToken, userId)
+              : Promise.reject(new Error(`Server returned ${r.status}`)),
+          )
+          .catch(() => {
+            void clearSession();
+            setState((prev) => ({
+              ...prev,
+              isConnecting: false,
+              error: 'Could not reconnect. Please log in again.',
+            }));
+          });
       } else {
         // Legacy session without userId — try /Users/Me
         void connectToJellyfin(normalized, apiKey ?? '');
@@ -251,7 +281,7 @@ export function useJellyfinConnection(
       const response = await fetch(`${normalizedUrl}/Users/AuthenticateByName`, {
         method: 'POST',
         headers: {
-          Authorization: authHeader,
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ Username: username, Pw: password }),
