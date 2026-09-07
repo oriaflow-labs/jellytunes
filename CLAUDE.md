@@ -73,6 +73,14 @@ So the copy exists in two independent places and can drift silently — nothing 
 
 There is no changelog or "what's new" field in snapcraft.yaml, and the store listing has no per-version section. Apps that show release notes write them into the description body manually.
 
+## Git Integration
+
+`main` is a **rebase-only trunk** — its history stays linear. Task branches are
+integrated by the studio-os pipeline with `python task.py wt merge <TASK_ID>`
+(`fetch` → `git rebase main` → `git merge --ff-only`), which replays each of the
+branch's commits onto `main`. **Never `git merge <branch>` by hand** — a merge
+commit breaks the linear history and nothing in the pipeline expects one.
+
 ## Testing Strategy
 
 - **Unit tests** live alongside source in `src/sync/*.test.ts` and also in `tests/unit/`
