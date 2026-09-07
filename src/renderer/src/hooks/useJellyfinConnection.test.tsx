@@ -477,5 +477,34 @@ describe('useJellyfinConnection', () => {
       // saveSession must NOT be re-called on failure — we didn't reconnect.
       expect(mockApi.saveSession).not.toHaveBeenCalled();
     });
+
+    it('refuses to reconnect over http:// (clears session, never fetches)', async () => {
+      // ORAIN-0564 SO-2 QA: a stored password session URL that isn't HTTPS
+      // must NOT be used to leak the accessToken over plaintext HTTP on every
+      // restart. Defends against a future regression that stores an http://
+      // URL into a password session.
+      mockApi.loadSession.mockResolvedValue(
+        JSON.stringify({
+          authKind: 'password',
+          url: 'http://jellyfin.insecure.test',
+          accessToken: 'pw-token-abc',
+          userId: 'user-1',
+        }),
+      );
+
+      const onConnected = vi.fn();
+      const { result } = renderHook(() => useJellyfinConnection(onConnected));
+
+      await waitFor(() => {
+        expect(result.current.isConnecting).toBe(false);
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockApi.clearSession).toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(false);
+      expect(result.current.error).toMatch(/Stored session URL is not HTTPS/);
+      expect(onConnected).not.toHaveBeenCalled();
+      expect(mockApi.saveSession).not.toHaveBeenCalled();
+    });
   });
 });

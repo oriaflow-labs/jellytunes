@@ -170,6 +170,23 @@ export function useJellyfinConnection(
         // message as the apikey branch — we deliberately don't distinguish
         // server-down from token-revoked, because that distinction would
         // leak which user exists.
+        //
+        // ORAIN-0564 SO-2 QA: same HTTPS gate as `connectWithPassword`. A
+        // stored password session URL must be https:// — otherwise we would
+        // leak the accessToken over plaintext HTTP on every restart.
+        // connectWithPassword already refuses to save an http:// URL, so
+        // today this branch is unreachable; the gate is a defense against a
+        // future regression that lets a non-HTTPS password session land in
+        // the encrypted file.
+        if (!isSecureAuthUrl(normalized)) {
+          void clearSession();
+          setState((prev) => ({
+            ...prev,
+            isConnecting: false,
+            error: 'Stored session URL is not HTTPS; refusing to reconnect.',
+          }));
+          return;
+        }
         void fetch(`${normalized}/System/Info/Public`, {
           signal: AbortSignal.timeout(5000),
           headers: jellyfinHeaders(accessToken),
