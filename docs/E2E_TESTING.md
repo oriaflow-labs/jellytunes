@@ -49,17 +49,18 @@ Playwright projects are the standing gate for both ends of that range:
 | `jellyfin-v12` | `jellyfin/jellyfin:12.0-rc7.20260831-232051` | `EnableLegacyAuthorization=false`, modern `Authorization: MediaBrowser` only |
 
 `rebuild.sh v12` injects the hardening flag into `system.xml` before baking the
-image. Both suites run the same 9 scenarios and are expected to end **12 passed /
-1 skipped** (E5 is the parked `fixme`). Audited green end-to-end against real
-containers in ORAIN-0599 (see `docs/JELLYFIN_API.md` → "Authentication header").
+image. Both suites run the same 10 scenarios and are expected to end **13 passed /
+1 skipped** (E5 is the parked `fixme`; E10 is the new password-mode spec added
+in ORAIN-0564 SO-3). Audited green end-to-end against real containers in
+ORAIN-0599 (see `docs/JELLYFIN_API.md` → "Authentication header").
 
 ## Test Status
 
-The suite runs 9 scenarios (13 Playwright tests):
+The suite runs 10 scenarios (14 Playwright tests):
 
 | Scenario                   | Status     | Notes                                                                                                                                                                                   |
 | -------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin                                                                                                                                          |
+| **E1** Connection          | ✅ Passing | Verifies the Electron app connects to Jellyfin via the apikey form (default mode)                                                                                                       |
 | **E2** Sync & disk tree    | ✅ Passing | Downloads tracks and validates folder structure on disk                                                                                                                                 |
 | **E3** Re-sync no-op       | ✅ Passing | Historically flaked ~1 in 8. ORAIN-0599 traced it to the post-sync "Sync complete" modal painting after `listTree` sees the files; `dismissSyncSuccessModal()` now waits the modal out. |
 | **E4** FLAC→MP3 conversion | ✅ Passing | Converts FLAC to MP3 and validates output                                                                                                                                               |
@@ -68,6 +69,19 @@ The suite runs 9 scenarios (13 Playwright tests):
 | **E7** Deselect & remove   | ✅ Passing | Exercises the delete-only preview branch and asserts the destination ends empty                                                                                                         |
 | **E8** Metadata layout     | ✅ Passing | Untagged album (AlbumId→MusicAlbum) and compilation folder placement — 2 tests                                                                                                          |
 | **E9** Navigation          | ✅ Passing | Tabs, server-side search and select-all — 4 tests, no sync, fastest in the suite                                                                                                        |
+| **E10** Password auth      | ✅ Passing | Same library assertion as E1 but drives `login()` in `'password'` mode. Both projects run it. (ORAIN-0564 SO-3)                                                                         |
+
+The dual-project matrix exercises **both** auth flows against both Jellyfin
+majors:
+
+| Auth flow → / Jellyfin project | `jellyfin-v11` | `jellyfin-v12` |
+| ------------------------------ | -------------- | -------------- |
+| API key (default mode)         | E1             | E1             |
+| Username + password            | E10            | E10            |
+
+`provision.mjs` writes `username: 'e2e'` and `password: 'e2e-password'` into
+`.server.<version>.json`; the E10 spec pulls them through `login()`'s
+`serverConfig` to switch the LoginScreen into password mode.
 
 The select-all confirmation dialog (select-all-confirm-dialog) is not covered: it only opens above 500 items and the fixture library has four. Covering it would require a fixture library two orders of magnitude larger, which is not worth the runtime.
 
@@ -130,11 +144,26 @@ Test selectors use the data-testid attribute for locating UI elements. These con
 
 ### Authentication Screen
 
+The auth screen renders one of two forms. The default (apikey) form is what
+E1 drives; the password form is what E10 drives (ORAIN-0564 SO-3).
+
 ```tsx
+// apikey mode (default — E1)
 <div data-testid="auth-screen">
   <input data-testid="server-url-input" type="url" />
   <input data-testid="api-key-input" type="password" />
   <button data-testid="connect-button">Conectar</button>
+  <button data-testid="mode-toggle-password">Use username + password</button>
+  {error && <div data-testid="error-message">{error}</div>}
+</div>
+
+// password mode (E10)
+<div data-testid="auth-screen">
+  <input data-testid="server-url-input" type="url" />
+  <input data-testid="username-input" type="text" />
+  <input data-testid="password-input" type="password" />
+  <button data-testid="connect-button">Sign in</button>
+  <button data-testid="mode-toggle-apikey">Use an API key instead</button>
   {error && <div data-testid="error-message">{error}</div>}
 </div>
 ```
@@ -280,11 +309,17 @@ The test suite reads server connection details from tests/e2e/.server.v11.json o
 ```json
 {
   "url": "http://localhost:8096",
-  "apiKey": "YOUR_JELLYFIN_API_KEY"
+  "apiKey": "YOUR_JELLYFIN_API_KEY",
+  "userId": "...",
+  "username": "e2e",
+  "password": "e2e-password"
 }
 ```
 
-This file is generated (never committed) to avoid leaking credentials in a public repository.
+The `username` / `password` fields are used by **E10 only** (password-mode
+login). They are written by `provision.mjs` so every scenario matrix entry
+above can run without extra setup. This file is generated (never committed)
+to avoid leaking credentials in a public repository.
 
 ## Fixtures & Generated Data
 
