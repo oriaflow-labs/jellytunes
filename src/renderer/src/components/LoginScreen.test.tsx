@@ -190,8 +190,8 @@ describe('LoginScreen', () => {
 });
 
 // ORAIN-0564 SO-1 — username+password mode in LoginScreen.
-// The recommended runtime path is password mode; API key is the advanced
-// fallback for administrators (mirrors the design constraint in the spec).
+// API-key mode is the default (preserves E1 + every existing user); password
+// mode is reachable via the toggle or by passing `initialMode="password"`.
 describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
   const baseProps = () => ({
     urlInput: '',
@@ -207,14 +207,14 @@ describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
     onPasswordSubmit: vi.fn(),
   });
 
-  it('renders password mode by default (username + password inputs visible without clicking a toggle)', () => {
-    render(<LoginScreen {...baseProps()} />);
+  it('renders password mode when initialMode="password" (username + password inputs visible without clicking a toggle)', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
     expect(screen.getByTestId('username-input')).toBeInTheDocument();
     expect(screen.getByTestId('password-input')).toBeInTheDocument();
   });
 
   it('renders a visible toggle to switch to API key mode, labelled as advanced', () => {
-    render(<LoginScreen {...baseProps()} />);
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
     const toggle = screen.getByTestId('mode-toggle-apikey');
     expect(toggle).toBeInTheDocument();
     expect(toggle.textContent ?? '').toMatch(/advanced|administrator|admin/i);
@@ -222,7 +222,7 @@ describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
 
   it('submits with (url, username, password) when password form is submitted', async () => {
     const props = baseProps();
-    render(<LoginScreen {...props} />);
+    render(<LoginScreen {...props} initialMode="password" />);
 
     const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
     const usernameInput = screen.getByTestId('username-input') as HTMLInputElement;
@@ -249,9 +249,9 @@ describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
     expect(call[2]).toBe('s3cret');
   });
 
-  it('still exposes the API-key inputs when the toggle is activated (default password mode is recommended)', () => {
-    render(<LoginScreen {...baseProps()} />);
-    // Password mode is the default; API-key mode needs an explicit toggle click.
+  it('still exposes the API-key inputs when the toggle is activated (password mode reachable via toggle)', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
+    // API-key mode needs an explicit toggle click from password mode.
     const toggle = screen.getByTestId('mode-toggle-apikey');
     act(() => {
       toggle.click();
