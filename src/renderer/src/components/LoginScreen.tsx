@@ -228,7 +228,7 @@ export function LoginScreen({
 
         <p className="text-caption text-on_surface_variant text-center mt-4">
           {mode === 'password'
-            ? 'Sign in with your Jellyfin username and password. HTTPS is required.'
+            ? 'Sign in with your Jellyfin username and password.'
             : 'Get your API Key in Jellyfin → Dashboard → Users → API Keys'}
         </p>
       </div>
