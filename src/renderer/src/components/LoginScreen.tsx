@@ -149,7 +149,7 @@ export function LoginScreen({
                   type="button"
                   data-testid="mode-toggle-apikey"
                   onClick={() => setMode('apikey')}
-                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium"
+                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
                   Use an API key instead (advanced / for administrators)
                 </button>
@@ -217,7 +217,7 @@ export function LoginScreen({
                   type="button"
                   data-testid="mode-toggle-password"
                   onClick={() => setMode('password')}
-                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium"
+                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
                   Back to username + password
                 </button>

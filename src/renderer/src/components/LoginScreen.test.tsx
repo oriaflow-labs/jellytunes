@@ -290,20 +290,34 @@ describe('LoginScreen — ORAIN-0679 password default + UI restyle', () => {
     expect(screen.queryByTestId('api-key-input')).not.toBeInTheDocument();
   });
 
-  it('mode-toggle-apikey renders as a styled secondary button', () => {
+  it('mode-toggle-apikey renders as a styled secondary button with focus-visible ring', () => {
     render(<LoginScreen {...baseProps()} initialMode="password" />);
     const toggle = screen.getByTestId('mode-toggle-apikey');
     expect(toggle).toHaveClass('bg-primary_container/10');
     expect(toggle).toHaveClass('border', 'border-primary_container/40');
     expect(toggle).toHaveClass('text-primary');
+    // H1 — AC5: keyboard focus must be visually indicated
+    expect(toggle).toHaveClass('focus-visible:outline-none');
+    expect(toggle).toHaveClass(
+      'focus-visible:ring-2',
+      'focus-visible:ring-primary',
+      'focus-visible:ring-offset-2',
+    );
   });
 
-  it('mode-toggle-password renders as a styled secondary button', () => {
+  it('mode-toggle-password renders as a styled secondary button with focus-visible ring', () => {
     render(<LoginScreen {...baseProps()} initialMode="apikey" />);
     const toggle = screen.getByTestId('mode-toggle-password');
     expect(toggle).toHaveClass('bg-primary_container/10');
     expect(toggle).toHaveClass('border', 'border-primary_container/40');
     expect(toggle).toHaveClass('text-primary');
+    // H1 — AC5: keyboard focus must be visually indicated
+    expect(toggle).toHaveClass('focus-visible:outline-none');
+    expect(toggle).toHaveClass(
+      'focus-visible:ring-2',
+      'focus-visible:ring-primary',
+      'focus-visible:ring-offset-2',
+    );
   });
 
   it('footer in password mode says "Sign in with your Jellyfin username and password." with no HTTPS text', () => {
@@ -317,5 +331,11 @@ describe('LoginScreen — ORAIN-0679 password default + UI restyle', () => {
   it('footer in apikey mode still shows the API key hint', () => {
     render(<LoginScreen {...baseProps()} initialMode="apikey" />);
     expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
+  });
+
+  // H2 — AC6: useEffect autofocus untested — regression guard
+  it('autofocuses the username field when mounted in password mode', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
+    expect(screen.getByTestId('username-input')).toHaveFocus();
   });
 });
