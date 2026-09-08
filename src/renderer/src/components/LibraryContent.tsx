@@ -332,7 +332,7 @@ export function LibraryContent({
           <div className="px-4 pt-3 pb-2 space-y-2">
             {/* Title + sync filter */}
             <div className="flex items-center justify-between">
-              <h2 className="text-headline-md capitalize">{activeLibrary}</h2>
+              <h2 className="text-headline-md capitalize">{tabLabel}</h2>
               <div className="flex gap-1 text-caption bg-surface_container_low rounded-lg p-1">
                 {(['all', 'selected', 'unselected'] as SyncFilter[]).map((f) => {
                   const isSelected = syncFilter === f;

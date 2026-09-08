@@ -115,7 +115,7 @@ export function AboutModal({ onClose }: AboutModalProps): JSX.Element {
         </div>
 
         <p className="text-body-md text-on_surface_variant mb-4 text-center">
-          Sync music from your Jellyfin server to portable devices.
+          Take your Jellyfin music offline on MP3 players and storage devices
         </p>
 
         {/* ── Row 1: Primary actions ── */}
