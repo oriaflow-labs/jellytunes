@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { GradientMusicIcon } from './GradientMusicIcon';
 
@@ -42,6 +42,13 @@ export function LoginScreen({
   initialMode = 'password',
 }: LoginScreenProps): JSX.Element {
   const [mode, setMode] = useState<LoginMode>(initialMode);
+  const usernameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mode === 'password') {
+      usernameRef.current?.focus();
+    }
+  }, [mode]);
 
   return (
     <div
@@ -91,6 +98,7 @@ export function LoginScreen({
                     Username
                   </label>
                   <input
+                    ref={usernameRef}
                     data-testid="username-input"
                     name="username"
                     type="text"
