@@ -145,16 +145,14 @@ export function LoginScreen({
                   Sign in
                 </button>
 
-                <div className="pt-2 border-t border-outline_variant">
-                  <button
-                    type="button"
-                    data-testid="mode-toggle-apikey"
-                    onClick={() => setMode('apikey')}
-                    className="w-full text-caption text-on_surface_variant hover:text-primary"
-                  >
-                    Use an API key instead (advanced / for administrators)
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  data-testid="mode-toggle-apikey"
+                  onClick={() => setMode('apikey')}
+                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium"
+                >
+                  Use an API key instead (advanced / for administrators)
+                </button>
               </div>
             </form>
           ) : (
@@ -215,16 +213,14 @@ export function LoginScreen({
                   Connect
                 </button>
 
-                <div className="pt-2 border-t border-outline_variant">
-                  <button
-                    type="button"
-                    data-testid="mode-toggle-password"
-                    onClick={() => setMode('password')}
-                    className="w-full text-caption text-on_surface_variant hover:text-primary"
-                  >
-                    Back to username + password
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  data-testid="mode-toggle-password"
+                  onClick={() => setMode('password')}
+                  className="w-full text-body-sm bg-primary_container/10 border border-primary_container/40 text-primary hover:bg-primary_container/20 rounded-lg px-3 py-2 transition-colors font-medium"
+                >
+                  Back to username + password
+                </button>
               </div>
             </form>
           )}
