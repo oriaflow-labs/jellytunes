@@ -42,12 +42,12 @@ export function LoginScreen({
   initialMode = 'password',
 }: LoginScreenProps): JSX.Element {
   const [mode, setMode] = useState<LoginMode>(initialMode);
-  const usernameRef = useRef<HTMLInputElement>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const serverUrlRef = useRef<HTMLInputElement>(null);
 
+  // ORAIN-0682: always focus server-url-input on mount and on mode change
   useEffect(() => {
-    if (mode === 'password') {
-      usernameRef.current?.focus();
-    }
+    serverUrlRef.current?.focus();
   }, [mode]);
 
   return (
@@ -67,6 +67,7 @@ export function LoginScreen({
           {mode === 'password' ? (
             <form
               data-testid="password-form"
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!onPasswordSubmit) return;
@@ -74,6 +75,11 @@ export function LoginScreen({
                 const url = (form.elements.namedItem('url') as HTMLInputElement).value;
                 const username = (form.elements.namedItem('username') as HTMLInputElement).value;
                 const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+                if (!url.trim() || !username.trim() || !password.trim()) {
+                  setFieldError('Please fill in all required fields.');
+                  return;
+                }
+                setFieldError(null);
                 onPasswordSubmit(url, username, password);
               }}
             >
@@ -83,11 +89,15 @@ export function LoginScreen({
                     Server URL
                   </label>
                   <input
+                    ref={serverUrlRef}
                     data-testid="server-url-input"
                     name="url"
                     type="url"
                     value={urlInput}
-                    onChange={(e) => onUrlChange(e.target.value)}
+                    onChange={(e) => {
+                      onUrlChange(e.target.value);
+                      setFieldError(null);
+                    }}
                     placeholder="https://jellyfin.example.com"
                     required
                     className="w-full bg-surface_container_low border border-outline_variant rounded-lg px-4 py-2 text-body-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
@@ -98,12 +108,14 @@ export function LoginScreen({
                     Username
                   </label>
                   <input
-                    ref={usernameRef}
                     data-testid="username-input"
                     name="username"
                     type="text"
                     value={usernameInput}
-                    onChange={(e) => onUsernameChange?.(e.target.value)}
+                    onChange={(e) => {
+                      onUsernameChange?.(e.target.value);
+                      setFieldError(null);
+                    }}
                     placeholder="Your Jellyfin username"
                     required
                     autoComplete="username"
@@ -119,7 +131,10 @@ export function LoginScreen({
                     name="password"
                     type="password"
                     value={passwordInput}
-                    onChange={(e) => onPasswordChange?.(e.target.value)}
+                    onChange={(e) => {
+                      onPasswordChange?.(e.target.value);
+                      setFieldError(null);
+                    }}
                     placeholder="Your Jellyfin password"
                     required
                     autoComplete="current-password"
@@ -127,13 +142,13 @@ export function LoginScreen({
                   />
                 </div>
 
-                {error && (
+                {(error || fieldError) && (
                   <div
                     data-testid="error-message"
                     className="flex items-center gap-2 text-error text-body-md"
                   >
                     <X className="w-4 h-4" />
-                    {error}
+                    {fieldError ?? error}
                   </div>
                 )}
 
@@ -157,11 +172,17 @@ export function LoginScreen({
             </form>
           ) : (
             <form
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 const url = (e.currentTarget.elements.namedItem('url') as HTMLInputElement).value;
                 const apiKey = (e.currentTarget.elements.namedItem('apiKey') as HTMLInputElement)
                   .value;
+                if (!url.trim() || !apiKey.trim()) {
+                  setFieldError('Please fill in all required fields.');
+                  return;
+                }
+                setFieldError(null);
                 onSubmit(url, apiKey);
               }}
             >
@@ -171,11 +192,15 @@ export function LoginScreen({
                     Server URL
                   </label>
                   <input
+                    ref={serverUrlRef}
                     data-testid="server-url-input"
                     name="url"
                     type="url"
                     value={urlInput}
-                    onChange={(e) => onUrlChange(e.target.value)}
+                    onChange={(e) => {
+                      onUrlChange(e.target.value);
+                      setFieldError(null);
+                    }}
                     placeholder="https://jellyfin.example.com"
                     required
                     className="w-full bg-surface_container_low border border-outline_variant rounded-lg px-4 py-2 text-body-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
@@ -188,20 +213,23 @@ export function LoginScreen({
                     name="apiKey"
                     type="password"
                     value={apiKeyInput}
-                    onChange={(e) => onApiKeyChange(e.target.value)}
+                    onChange={(e) => {
+                      onApiKeyChange(e.target.value);
+                      setFieldError(null);
+                    }}
                     placeholder="Your Jellyfin API key"
                     required
                     className="w-full bg-surface_container_low border border-outline_variant rounded-lg px-4 py-2 text-body-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   />
                 </div>
 
-                {error && (
+                {(error || fieldError) && (
                   <div
                     data-testid="error-message"
                     className="flex items-center gap-2 text-error text-body-md"
                   >
                     <X className="w-4 h-4" />
-                    {error}
+                    {fieldError ?? error}
                   </div>
                 )}
 

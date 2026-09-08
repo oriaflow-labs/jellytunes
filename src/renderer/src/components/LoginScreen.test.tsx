@@ -334,8 +334,115 @@ describe('LoginScreen — ORAIN-0679 password default + UI restyle', () => {
   });
 
   // H2 — AC6: useEffect autofocus untested — regression guard
-  it('autofocuses the username field when mounted in password mode', () => {
+  // ORAIN-0682: focus unified on server-url-input in all modes
+  it('autofocuses server-url-input when mounted in password mode', () => {
     render(<LoginScreen {...baseProps()} initialMode="password" />);
-    expect(screen.getByTestId('username-input')).toHaveFocus();
+    expect(screen.getByTestId('server-url-input')).toHaveFocus();
+  });
+
+  it('autofocuses server-url-input when mounted in apikey mode', () => {
+    render(<LoginScreen {...baseProps()} initialMode="apikey" />);
+    expect(screen.getByTestId('server-url-input')).toHaveFocus();
+  });
+
+  it('autofocuses server-url-input when toggling from password to apikey mode', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
+    const toggle = screen.getByTestId('mode-toggle-apikey');
+    act(() => {
+      toggle.click();
+    });
+    expect(screen.getByTestId('server-url-input')).toHaveFocus();
+  });
+
+  // ORAIN-0682: native validation bubble suppression — JS validation instead
+  it('shows fieldError and does not call onPasswordSubmit when a required field is empty in password mode', async () => {
+    const props = baseProps();
+    render(<LoginScreen {...props} initialMode="password" />);
+
+    // Fill only URL and username, leave password empty
+    const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
+    const usernameInput = screen.getByTestId('username-input') as HTMLInputElement;
+
+    await act(async () => {
+      urlInput.value = 'https://jellyfin.example.com';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+      usernameInput.value = 'alice';
+      usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = document.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+    });
+
+    expect(props.onPasswordSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('error-message')).toBeInTheDocument();
+  });
+
+  it('shows fieldError and does not call onSubmit when a required field is empty in apikey mode', async () => {
+    const props = baseProps();
+    render(<LoginScreen {...props} initialMode="apikey" />);
+
+    const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
+
+    await act(async () => {
+      urlInput.value = 'https://jellyfin.example.com';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = document.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+    });
+
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('error-message')).toBeInTheDocument();
+  });
+
+  it('calls onPasswordSubmit when all fields are filled in password mode', async () => {
+    const props = baseProps();
+    render(<LoginScreen {...props} initialMode="password" />);
+
+    const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
+    const usernameInput = screen.getByTestId('username-input') as HTMLInputElement;
+    const passwordInput = screen.getByTestId('password-input') as HTMLInputElement;
+
+    await act(async () => {
+      urlInput.value = 'https://jellyfin.example.com';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+      usernameInput.value = 'alice';
+      usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      passwordInput.value = 's3cret';
+      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = document.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+    });
+
+    expect(props.onPasswordSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onSubmit when all fields are filled in apikey mode', async () => {
+    const props = baseProps();
+    render(<LoginScreen {...props} initialMode="apikey" />);
+
+    const urlInput = screen.getByTestId('server-url-input') as HTMLInputElement;
+    const apiKeyInput = screen.getByTestId('api-key-input') as HTMLInputElement;
+
+    await act(async () => {
+      urlInput.value = 'https://jellyfin.example.com';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+      apiKeyInput.value = 'test-api-key';
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = document.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+    });
+
+    expect(props.onSubmit).toHaveBeenCalledTimes(1);
   });
 });
