@@ -72,6 +72,16 @@ async function clearSession(): Promise<void> {
 }
 
 /**
+ * ORAIN-0679: returns the saved authKind without loading the full session.
+ * Used by App.tsx to derive initialMode for LoginScreen without triggering
+ * a connection attempt.
+ */
+export async function loadSavedAuthKind(): Promise<'apikey' | 'password' | null> {
+  const session = await loadSession();
+  return session?.authKind ?? null;
+}
+
+/**
  * ORAIN-0564 SO-1: refuse to send credentials over plain HTTP.
  *
  * Loopback hosts are exempt: `http://localhost` / `http://127.0.0.1` / `http://[::1]`

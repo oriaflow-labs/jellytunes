@@ -117,6 +117,7 @@ describe('LoginScreen', () => {
   });
 
   // 4. error visible when error prop is a string (renders in password mode too)
+  // ORAIN-0679: explicit initialMode needed because LoginScreen now defaults to password mode
   it('shows error message when error prop is a string', () => {
     const props = {
       urlInput: '',
@@ -125,6 +126,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     expect(screen.getByTestId('error-message')).toHaveTextContent('Invalid credentials');
@@ -174,6 +176,7 @@ describe('LoginScreen', () => {
   // 7. ORAIN-0578: the snap permission banner is owned by `App`, not by this
   // screen. Keeping it here is what made it unreachable — it could only be
   // raised once the connection succeeded, which unmounts this screen.
+  // ORAIN-0679: explicit initialMode needed because LoginScreen now defaults to password mode
   it('does not render any snap banner itself', () => {
     const props = {
       urlInput: '',
@@ -182,6 +185,7 @@ describe('LoginScreen', () => {
       onUrlChange: vi.fn(),
       onApiKeyChange: vi.fn(),
       onSubmit: vi.fn(),
+      initialMode: 'apikey' as const,
     };
     render(<LoginScreen {...props} />);
     expect(screen.queryByTestId('snap-permissions-banner')).not.toBeInTheDocument();
@@ -258,5 +262,60 @@ describe('LoginScreen — password mode (ORAIN-0564 SO-1)', () => {
     });
     expect(screen.getByTestId('api-key-input')).toBeInTheDocument();
     expect(screen.queryByTestId('username-input')).not.toBeInTheDocument();
+  });
+});
+
+// ORAIN-0679: new tests for the password-default and UI restyle changes
+describe('LoginScreen — ORAIN-0679 password default + UI restyle', () => {
+  const baseProps = () => ({
+    urlInput: '',
+    apiKeyInput: '',
+    usernameInput: '',
+    passwordInput: '',
+    error: null as string | null,
+    onUrlChange: vi.fn(),
+    onApiKeyChange: vi.fn(),
+    onUsernameChange: vi.fn(),
+    onPasswordChange: vi.fn(),
+    onSubmit: vi.fn(),
+    onPasswordSubmit: vi.fn(),
+    initialMode: 'password' as const,
+  });
+
+  it('defaults to password mode when initialMode is not specified', () => {
+    // Renders LoginScreen without initialMode prop — relies on the component default
+    const { initialMode: _, ...propsWithoutMode } = baseProps();
+    render(<LoginScreen {...propsWithoutMode} />);
+    expect(screen.getByTestId('username-input')).toBeInTheDocument();
+    expect(screen.queryByTestId('api-key-input')).not.toBeInTheDocument();
+  });
+
+  it('mode-toggle-apikey renders as a styled secondary button', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
+    const toggle = screen.getByTestId('mode-toggle-apikey');
+    expect(toggle).toHaveClass('bg-primary_container/10');
+    expect(toggle).toHaveClass('border', 'border-primary_container/40');
+    expect(toggle).toHaveClass('text-primary');
+  });
+
+  it('mode-toggle-password renders as a styled secondary button', () => {
+    render(<LoginScreen {...baseProps()} initialMode="apikey" />);
+    const toggle = screen.getByTestId('mode-toggle-password');
+    expect(toggle).toHaveClass('bg-primary_container/10');
+    expect(toggle).toHaveClass('border', 'border-primary_container/40');
+    expect(toggle).toHaveClass('text-primary');
+  });
+
+  it('footer in password mode says "Sign in with your Jellyfin username and password." with no HTTPS text', () => {
+    render(<LoginScreen {...baseProps()} initialMode="password" />);
+    expect(
+      screen.getByText('Sign in with your Jellyfin username and password.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/HTTPS is required/i)).not.toBeInTheDocument();
+  });
+
+  it('footer in apikey mode still shows the API key hint', () => {
+    render(<LoginScreen {...baseProps()} initialMode="apikey" />);
+    expect(screen.getByText(/Get your API Key in Jellyfin/)).toBeInTheDocument();
   });
 });

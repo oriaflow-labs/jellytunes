@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useJellyfinConnection, loadSavedAuthKind } from './hooks/useJellyfinConnection';
 import type {
   ActiveSection,
   LibraryTab,
@@ -29,7 +30,6 @@ import { useTabSearch, UseTabSearchProvider } from './hooks/useTabSearch';
 import { useDeviceSelections } from './hooks/useDeviceSelections';
 import { useLibrary } from './hooks/useLibrary';
 import { useSync } from './hooks/useSync';
-import { useJellyfinConnection } from './hooks/useJellyfinConnection';
 import { useSavedDestinations } from './hooks/useSavedDestinations';
 import { getTrackRegistry } from './hooks/useTrackRegistry';
 import { buildItemTypes, buildItemIds } from './utils/selectionTypes';
@@ -731,6 +731,16 @@ function App(): JSX.Element {
   useEffect(() => {
     void window.api.isSessionStorageAvailable().then(setSessionStorageAvailable);
   }, []);
+  // ORAIN-0679: restore the last-used auth mode so the login screen shows the
+  // form the user is most likely to need. Defaults to 'password' on first launch.
+  const [initialLoginMode, setInitialLoginMode] = useState<'apikey' | 'password'>('password');
+  useEffect(() => {
+    void loadSavedAuthKind().then((kind) => {
+      if (kind === 'apikey' || kind === 'password') {
+        setInitialLoginMode(kind);
+      }
+    });
+  }, []);
   // ORAIN-0564 SO-1: username + password are local input state on the login
   // screen. The hook never receives them — only `connectWithPassword` is
   // called with the live values when the form submits. This keeps the
@@ -755,6 +765,7 @@ function App(): JSX.Element {
           onPasswordSubmit={(url, username, password) => {
             void connection.connectWithPassword(url, username, password);
           }}
+          initialMode={initialLoginMode}
         />
       );
     }

@@ -94,15 +94,15 @@ export const test = base.extend<
 export { expect } from '@playwright/test';
 
 /**
- * ORAIN-0564 SO-3: which auth flow `login()` drives.
+ * ORAIN-0679: which auth flow `login()` drives.
  *
  * - `'apikey'` (default) — E1 regression sentinel and every existing scenario.
- *   Fills the apikey form, then handles the user selector if the server
- *   returns a public user list instead of identifying the user directly.
- * - `'password'` — the new SO-1 username+password flow. Switches the
- *   LoginScreen into password mode, fills the three fields, and goes
- *   straight to the library (the accessToken identifies the user, so no
- *   selector).
+ *   Switches the LoginScreen into apikey mode via the toggle, fills the two
+ *   fields, then handles the user selector if the server returns a public user
+ *   list instead of identifying the user directly.
+ * - `'password'` — the default (ORAIN-0679) username+password flow. Fills the
+ *   three fields and goes straight to the library (the accessToken identifies
+ *   the user, so no selector).
  */
 export type AuthMode = 'apikey' | 'password';
 
@@ -124,7 +124,7 @@ export async function login(
           '.server.<version>.json.',
       );
     }
-    await page.getByTestId('mode-toggle-password').click();
+    // ORAIN-0679: password mode is now the default — no toggle click needed
     await page.getByTestId('server-url-input').fill(url);
     await page.getByTestId('username-input').fill(username);
     await page.getByTestId('password-input').fill(password);
@@ -133,6 +133,8 @@ export async function login(
     return;
   }
 
+  // ORAIN-0679: apikey is no longer the default — switch to it via the toggle first
+  await page.getByTestId('mode-toggle-apikey').click();
   await page.getByTestId('server-url-input').fill(url);
   await page.getByTestId('api-key-input').fill(apiKey);
   await page.getByTestId('connect-button').click();
