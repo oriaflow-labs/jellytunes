@@ -941,6 +941,11 @@ class SyncCoreImpl {
     options: ReturnType<typeof resolveSyncOptions>,
   ): Promise<number> {
     const data = await this.deps.api.downloadItem(track.id);
+
+    // Check for cancellation after download returns, before writing anything to disk.
+    // This prevents completing a track that was already in-flight when cancel was called.
+    this.cancellation.throwIfCancelled();
+
     const embedMetadata = options.embedMetadata !== false;
 
     if (embedMetadata) {
@@ -2113,6 +2118,9 @@ class SyncCoreImpl {
       stream.pipe(writeStream);
       writeStream.on('finish', resolve);
     });
+
+    // Check for cancellation after download stream is buffered, before expensive conversion.
+    this.cancellation.throwIfCancelled();
 
     let metadata: TrackMetadata = {};
     if (embedMetadata) {

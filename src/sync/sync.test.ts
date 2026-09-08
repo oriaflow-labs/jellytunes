@@ -878,11 +878,27 @@ describe('Integration: Full Sync Flow', () => {
     expect(progressEvents[progressEvents.length - 1].phase).toBe('complete');
   });
 
-  it('should handle cancellation correctly', async () => {
-    const deps = createMockDeps();
-    const core = createTestSyncCore(validConfig, deps);
+  it('should not write tracks when cancelled mid-download', async () => {
+    let syncCancelled = false;
 
-    // Start sync and cancel immediately
+    const slowDeps = createMockDeps({
+      api: createMockApiClient({
+        getTracksForItems: async () => ({ tracks: mockTracks, errors: [] }),
+        downloadItem: async () => {
+          // Yield to the event loop so cancel() (scheduled via setImmediate below)
+          // fires before we return the data and hit the throwIfCancelled() checkpoint.
+          // This mimics a download completing just after cancel was called.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          if (syncCancelled) {
+            // Return data anyway — the checkpoint in copyTrackFile will throw
+            return Buffer.from('fake audio data');
+          }
+          return Buffer.from('fake audio data');
+        },
+      }),
+    });
+
+    const core = createTestSyncCore(validConfig, slowDeps);
     const itemTypes = new Map<string, ItemType>([['album-1', 'album']]);
 
     const syncPromise = core.sync({
@@ -891,14 +907,44 @@ describe('Integration: Full Sync Flow', () => {
       destinationPath: '/music',
     });
 
-    // Cancel the sync
-    (core as any).cancel?.();
+    // Schedule cancel to fire on the next event-loop iteration, guaranteed before
+    // the download promise resolves and hits the throwIfCancelled() checkpoint.
+    setImmediate(() => {
+      syncCancelled = true;
+      core.cancel();
+    });
 
     const result = await syncPromise;
 
-    // Should either cancel or complete (race condition)
+    // Verify: cancelled, not completed
+    expect(result.cancelled).toBe(true);
+    expect(result.success).toBe(false);
+    // No tracks should have been recorded as synced
+    expect(result.tracksCopied).toBe(0);
+    // The error should reflect cancellation, not a generic failure
+    expect(result.errors).toContain('Sync was cancelled by user');
+  });
 
-    expect(result.cancelled || result.success).toBe(true);
+  it('should cancel when cancel is called before copy phase', async () => {
+    const deps = createMockDeps();
+    const core = createTestSyncCore(validConfig, deps);
+    const itemTypes = new Map<string, ItemType>([['album-1', 'album']]);
+
+    const syncPromise = core.sync({
+      itemIds: ['album-1'],
+      itemTypes,
+      destinationPath: '/music',
+    });
+
+    // Cancel before copy phase (after fetch, before copy)
+    core.cancel();
+
+    const result = await syncPromise;
+
+    // Must be cancelled — no race since cancel was called before copy phase started
+    expect(result.cancelled).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.errors).toContain('Sync was cancelled by user');
   });
 });
 
