@@ -245,6 +245,16 @@ export function useJellyfinConnection(
 
   const connectToJellyfin = async (url: string, apiKey: string): Promise<boolean> => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
+    // ORAIN-0680: same HTTPS gate as connectWithPassword — an API key over
+    // plaintext HTTP exposes an admin-capable, non-expiring credential.
+    if (!isSecureAuthUrl(url)) {
+      setState((prev) => ({
+        ...prev,
+        isConnecting: false,
+        error: 'HTTPS is required for API key authentication.',
+      }));
+      return false;
+    }
     try {
       const normalizedUrl = url.replace(/\/$/, '');
       const headers = jellyfinHeaders(apiKey);

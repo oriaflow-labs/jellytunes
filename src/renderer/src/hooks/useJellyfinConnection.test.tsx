@@ -525,6 +525,70 @@ describe('useJellyfinConnection', () => {
     });
   });
 
+  // ORAIN-0680 — API key mode must block http:// non-loopback, same as password.
+  describe('connectToJellyfin HTTPS gate', () => {
+    it('blocks http:// non-loopback and never calls fetch', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('http://jellyfin.test', 'apikey-abc');
+      });
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(false);
+      expect(result.current.error).toMatch(/https/i);
+    });
+
+    it('allows http:// loopback hosts (localhost)', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ ServerName: 'Local Server' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ Id: 'user-1', Name: 'Local User' }),
+        });
+
+      const onConnected = vi.fn();
+      const { result } = renderHook(() => useJellyfinConnection(onConnected));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('http://localhost:8096', 'apikey-abc');
+      });
+
+      expect(mockFetch).toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(true);
+      expect(onConnected).toHaveBeenCalledWith('http://localhost:8096', 'apikey-abc', 'user-1');
+    });
+
+    it('allows http:// 127.0.0.1 (loopback IP)', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ ServerName: 'Local Server' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ Id: 'user-1', Name: 'Local User' }),
+        });
+
+      const onConnected = vi.fn();
+      const { result } = renderHook(() => useJellyfinConnection(onConnected));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('http://127.0.0.1:8096', 'apikey-abc');
+      });
+
+      expect(mockFetch).toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(true);
+    });
+  });
+
   // ORAIN-0564: loopback hosts are exempt from the HTTPS-only credential gate
   // (browser "potentially trustworthy origin" rule) so the E2E suite can drive
   // the password flow against its local containers.
