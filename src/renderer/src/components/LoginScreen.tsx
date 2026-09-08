@@ -16,15 +16,16 @@ interface LoginScreenProps {
   onPasswordChange?: (value: string) => void;
   onSubmit: (url: string, apiKey: string) => void;
   onPasswordSubmit?: (url: string, username: string, password: string) => void;
+  /** @default 'password' */
   initialMode?: LoginMode;
 }
 
 /**
- * ORAIN-0564 SO-1: API-key mode is the default — every existing user already
- * uses it, and E1 (tests/e2e/specs/e1-connection.spec.ts) is built around it.
- * Password mode is the new flow, reachable via a labelled toggle for users
- * who prefer typing their Jellyfin credentials. Tests that exercise password
- * mode pass `initialMode="password"` explicitly (see LoginScreen.test.tsx).
+ * ORAIN-0679: password mode is the default — new users typically have Jellyfin
+ * credentials but not an API key. API-key mode is reachable in one click via
+ * the toggle. E1 (tests/e2e/specs/e1-connection.spec.ts) drives apikey mode
+ * explicitly via `initialMode="apikey"`; all other existing tests that need
+ * the apikey branch do the same (see LoginScreen.test.tsx).
  */
 export function LoginScreen({
   urlInput,
@@ -38,7 +39,7 @@ export function LoginScreen({
   onPasswordChange,
   onSubmit,
   onPasswordSubmit,
-  initialMode = 'apikey',
+  initialMode = 'password',
 }: LoginScreenProps): JSX.Element {
   const [mode, setMode] = useState<LoginMode>(initialMode);
 
