@@ -299,11 +299,24 @@ export function useJellyfinConnection(
       }));
       return false;
     } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        isConnecting: false,
-        error: err instanceof Error ? err.message : 'Connection failed',
-      }));
+      // ORAIN-0685: when fetch fails to reach the server (TypeError with
+      // "Failed to fetch") show a clear message; preserve specific HTTP error
+      // messages (e.g. "Connection error: 500") for all other errors.
+      const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
+      if (isNetworkError) {
+        window.api.logError(err.message);
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: "Couldn't reach the server. Check the address and that Jellyfin is running.",
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: err instanceof Error ? err.message : 'Connection failed',
+        }));
+      }
       return false;
     }
   };
@@ -380,11 +393,24 @@ export function useJellyfinConnection(
       onConnected(normalizedUrl, accessToken, userId);
       return true;
     } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        isConnecting: false,
-        error: err instanceof Error ? err.message : 'Connection failed',
-      }));
+      // ORAIN-0685: when fetch fails to reach the server (TypeError with
+      // "Failed to fetch") show a clear message; preserve specific HTTP error
+      // messages (e.g. "Invalid username or password") for all other errors.
+      const isNetworkError = err instanceof TypeError && err.message === 'Failed to fetch';
+      if (isNetworkError) {
+        window.api.logError(err.message);
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: "Couldn't reach the server. Check the address and that Jellyfin is running.",
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          isConnecting: false,
+          error: err instanceof Error ? err.message : 'Connection failed',
+        }));
+      }
       return false;
     }
   };

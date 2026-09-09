@@ -589,6 +589,75 @@ describe('useJellyfinConnection', () => {
     });
   });
 
+  // ORAIN-0685: "Failed to fetch" replaced with clear message when server unreachable
+  describe('connectToJellyfin network errors (ORAIN-0685)', () => {
+    it('shows clear message and logs original error when fetch rejects with TypeError', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
+      });
+
+      expect(result.current.error).toBe(
+        "Couldn't reach the server. Check the address and that Jellyfin is running.",
+      );
+      expect(mockApi.logError).toHaveBeenCalledWith('Failed to fetch');
+    });
+
+    it('preserves specific HTTP error messages when server responds with non-ok status', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectToJellyfin('https://jellyfin.test', 'test-key');
+      });
+
+      expect(result.current.error).toMatch(/Connection error: 500/);
+      expect(mockApi.logError).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('connectWithPassword network errors (ORAIN-0685)', () => {
+    it('shows clear message and logs original error when fetch rejects with TypeError', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('https://jellyfin.test', 'alice', 'secret');
+      });
+
+      expect(result.current.error).toBe(
+        "Couldn't reach the server. Check the address and that Jellyfin is running.",
+      );
+      expect(mockApi.logError).toHaveBeenCalledWith('Failed to fetch');
+    });
+
+    it('preserves 401 invalid credentials message when server responds', async () => {
+      mockApi.loadSession.mockResolvedValue(null);
+      mockFetch.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized' });
+
+      const { result } = renderHook(() => useJellyfinConnection(vi.fn()));
+
+      await act(async () => {
+        await result.current.connectWithPassword('https://jellyfin.test', 'alice', 'wrong');
+      });
+
+      expect(result.current.error).toBe('Invalid username or password');
+      expect(mockApi.logError).not.toHaveBeenCalled();
+    });
+  });
+
   // ORAIN-0564: loopback hosts are exempt from the HTTPS-only credential gate
   // (browser "potentially trustworthy origin" rule) so the E2E suite can drive
   // the password flow against its local containers.
