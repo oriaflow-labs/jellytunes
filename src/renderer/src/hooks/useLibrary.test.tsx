@@ -568,7 +568,11 @@ describe('loadLibrary error preservation', () => {
       if (url.includes('/Artists?') && !url.includes('AlbumArtists')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ Items: [{ Id: 'a1', Name: 'Artist 1', AlbumCount: 1, ImageTags: {} }], TotalRecordCount: 1 }),
+          json: () =>
+            Promise.resolve({
+              Items: [{ Id: 'a1', Name: 'Artist 1', AlbumCount: 1, ImageTags: {} }],
+              TotalRecordCount: 1,
+            }),
         });
       }
       // AlbumArtists endpoint - FAIL
