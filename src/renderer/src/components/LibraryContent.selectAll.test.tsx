@@ -44,6 +44,14 @@ const defaultProps = {
   searchResults: null,
   isSearching: false,
   searchError: null,
+  tabStates: {
+    artists: 'loaded' as const,
+    albumArtists: 'loaded' as const,
+    albums: 'loaded' as const,
+    playlists: 'loaded' as const,
+    genres: 'loaded' as const,
+  },
+  onRetryTab: vi.fn(),
 };
 
 beforeEach(() => {

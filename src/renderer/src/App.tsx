@@ -600,6 +600,8 @@ function AppConnected({
               searchResults={searchResults}
               isSearching={isSearching}
               searchError={searchError}
+              tabStates={lib.tabStates}
+              onRetryTab={lib.retryTab}
             />
           ) : effectiveSection === 'device' && effectiveDevicePath ? (
             <main className="flex-1 overflow-hidden">

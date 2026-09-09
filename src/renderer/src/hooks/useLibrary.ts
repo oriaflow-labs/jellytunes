@@ -24,6 +24,8 @@ import {
 } from '../utils/jellyfin';
 import { logger } from '../utils/logger';
 
+export type TabState = 'loading' | 'loaded' | 'error';
+
 export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string | null) {
   const [artists, setArtists] = useState<Artist[]>([]);
   const [albumArtists, setAlbumArtists] = useState<AlbumArtist[]>([]);
@@ -35,6 +37,13 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadedTabs, setLoadedTabs] = useState<Set<LibraryTab>>(new Set(['artists']));
   const [error, setError] = useState<string | null>(null);
+  const [tabStates, setTabStates] = useState<Record<LibraryTab, TabState>>({
+    artists: 'loading',
+    albumArtists: 'loading',
+    albums: 'loading',
+    playlists: 'loading',
+    genres: 'loading',
+  });
 
   const [pagination, setPagination] = useState<PaginationState>({
     artists: { items: [], total: 0, startIndex: 0, hasMore: true, scrollPos: 0 },
@@ -214,6 +223,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
       logger.error('Failed to load artists: ' + (e instanceof Error ? e.message : String(e)));
       setError('Error loading artists');
       setArtists([]);
+      setTabStates((prev) => ({ ...prev, artists: 'error' }));
     }
 
     // Fetch Album Artists (distinct from track-level Artists)
@@ -245,6 +255,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     } catch (e) {
       logger.error('Failed to load album artists: ' + (e instanceof Error ? e.message : String(e)));
       setAlbumArtists([]);
+      setTabStates((prev) => ({ ...prev, albumArtists: 'error' }));
     }
 
     try {
@@ -275,6 +286,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     } catch (e) {
       logger.error('Failed to load albums: ' + (e instanceof Error ? e.message : String(e)));
       setAlbums([]);
+      setTabStates((prev) => ({ ...prev, albums: 'error' }));
     }
 
     try {
@@ -305,6 +317,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     } catch (e) {
       logger.error('Failed to load playlists: ' + (e instanceof Error ? e.message : String(e)));
       setPlaylists([]);
+      setTabStates((prev) => ({ ...prev, playlists: 'error' }));
     }
 
     try {
@@ -339,6 +352,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     } catch (e) {
       logger.error('Failed to load genres: ' + (e instanceof Error ? e.message : String(e)));
       setGenres([]);
+      setTabStates((prev) => ({ ...prev, genres: 'error' }));
     }
 
     // Mark tabs as loaded AFTER all data has been fetched to avoid the sync effect
@@ -346,7 +360,23 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     // Use Promise.resolve() to defer to next microtask so sync effect runs first
     void Promise.resolve().then(() => {
       setLoadedTabs(new Set(['artists', 'albumArtists', 'albums', 'playlists', 'genres']));
+      setTabStates({
+        artists: 'loaded',
+        albumArtists: 'loaded',
+        albums: 'loaded',
+        playlists: 'loaded',
+        genres: 'loaded',
+      });
     });
+  };
+
+  const retryTab = async (tab: LibraryTab): Promise<void> => {
+    setLoadedTabs((prev) => {
+      const next = new Set(prev);
+      next.delete(tab);
+      return next;
+    });
+    await loadTab(tab);
   };
 
   const loadTab = async (tab: LibraryTab): Promise<void> => {
@@ -492,8 +522,10 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
         }));
       }
       setLoadedTabs((prev) => new Set(prev).add(tab));
+      setTabStates((prev) => ({ ...prev, [tab]: 'loaded' }));
     } catch (e) {
       logger.error(`Failed to load ${tab}: ` + (e instanceof Error ? e.message : String(e)));
+      setTabStates((prev) => ({ ...prev, [tab]: 'error' }));
     }
   };
 
@@ -628,6 +660,13 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
   const refreshLibrary = useCallback(async () => {
     if (!jellyfinConfig || !userId) return;
     setLoadedTabs(new Set());
+    setTabStates({
+      artists: 'loading',
+      albumArtists: 'loading',
+      albums: 'loading',
+      playlists: 'loading',
+      genres: 'loading',
+    });
     setArtists([]);
     setAlbumArtists([]);
     setAlbums([]);
@@ -641,7 +680,8 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
       genres: { items: [], total: 0, startIndex: 0, hasMore: true, scrollPos: 0 },
     });
     await loadLibrary(jellyfinConfig.url, jellyfinConfig.apiKey, userId);
-  }, [jellyfinConfig, userId, loadLibrary]);
+    await loadStats(jellyfinConfig.url, jellyfinConfig.apiKey, userId);
+  }, [jellyfinConfig, userId, loadLibrary, loadStats]);
 
   /**
    * Fetches all item IDs for a given tab, loading additional pages if needed.
@@ -817,6 +857,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     loadedTabs,
     error,
     setError,
+    tabStates,
     itemTypeIndex,
     itemTypeIndexRef,
     contentScrollRef,
@@ -828,5 +869,6 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     refreshLibrary,
     fetchAllIds,
     selectAllWithCompleteSet,
+    retryTab,
   };
 }

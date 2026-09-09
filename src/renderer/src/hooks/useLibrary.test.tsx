@@ -50,7 +50,136 @@ function createGenresFetch() {
   };
 }
 
-describe('useLibrary', () => {
+// ─── tabStates ───────────────────────────────────────────────────────────────
+
+describe('tabStates', () => {
+  function setupFetchMock(responses: Record<string, { items: unknown[]; total: number }>) {
+    mockFetch.mockImplementation((url: string) => {
+      if (responses[url]) {
+        const { items, total } = responses[url];
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ Items: items, TotalRecordCount: total }),
+        });
+      }
+      for (const pattern of Object.keys(responses)) {
+        if (url.includes(pattern)) {
+          const { items, total } = responses[pattern];
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ Items: items, TotalRecordCount: total }),
+          });
+        }
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ Items: [], TotalRecordCount: 0 }),
+      });
+    });
+  }
+
+  it('exposes tabStates in the return object', async () => {
+    mockFetch.mockResolvedValue(createMockFetch());
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+    // tabStates must be present on the returned object
+    expect(result.current.tabStates).toBeDefined();
+    expect(typeof result.current.tabStates).toBe('object');
+  });
+
+  it('sets genres tab to error when genres fetch fails', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    // After a failed fetch, tabStates.genres must be 'error'
+    expect(result.current.tabStates.genres).toBe('error');
+  });
+
+  it('sets artists tab to loaded after successful loadTab', async () => {
+    mockFetch.mockResolvedValue(createMockFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    // 'artists' is pre-loaded in initial state (loadedTabs = Set(['artists'])),
+    // so loadTab early-returns without fetching. Test 'albums' instead — a tab
+    // that requires a real fetch and transitions from 'loading' to 'loaded'.
+    await act(async () => {
+      await result.current.loadTab('albums');
+    });
+
+    expect(result.current.tabStates.albums).toBe('loaded');
+  });
+
+  it('sets genres tab to loaded after successful genres loadTab', async () => {
+    mockFetch.mockResolvedValue(createGenresFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    expect(result.current.tabStates.genres).toBe('loaded');
+  });
+
+  it('refreshLibrary sets all tab states to loading', async () => {
+    setupFetchMock({
+      'SortBy=Name&Limit=50&StartIndex=0': {
+        items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
+        total: 1,
+      },
+      'IncludeItemTypes=MusicAlbum': { items: [], total: 0 },
+      'IncludeItemTypes=Playlist': { items: [], total: 0 },
+      '/Genres': { items: [], total: 0 },
+      '/Views': { items: [], total: 0 },
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    // Start refresh (non-blocking — just check state immediately after calling)
+    let refreshPromise: Promise<void>;
+    await act(async () => {
+      refreshPromise = result.current.refreshLibrary();
+      // State should be 'loading' for all tabs right after the call
+      expect(result.current.tabStates.artists).toBe('loading');
+      expect(result.current.tabStates.albumArtists).toBe('loading');
+      expect(result.current.tabStates.albums).toBe('loading');
+      expect(result.current.tabStates.playlists).toBe('loading');
+      expect(result.current.tabStates.genres).toBe('loading');
+      await refreshPromise;
+    });
+  });
+
+  it('refreshLibrary calls loadStats after reloading', async () => {
+    setupFetchMock({
+      'SortBy=Name&Limit=50&StartIndex=0': {
+        items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
+        total: 1,
+      },
+      'IncludeItemTypes=MusicAlbum': { items: [], total: 0 },
+      'IncludeItemTypes=Playlist': { items: [], total: 0 },
+      '/Genres': { items: [], total: 0 },
+      '/Views': { items: [], total: 0 },
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.refreshLibrary();
+    });
+
+    // loadStats fetches /Users/{id}/Items/Counts — verify it was called
+    const calledUrls = (mockFetch.mock.calls as Array<[string]>).map((c) => c[0]);
+    const countsCall = calledUrls.find((url) => url.includes('Items/Counts'));
+    expect(countsCall).toBeDefined();
+  });
+});
+
+describe('loadLibrary', () => {
   // URL-based mock helper - matches URL against patterns
   function setupFetchMock(responses: Record<string, { items: unknown[]; total: number }>) {
     mockFetch.mockImplementation((url: string) => {
@@ -79,345 +208,351 @@ describe('useLibrary', () => {
     });
   }
 
-  describe('loadLibrary', () => {
-    it('fetches all 5 tabs in parallel', async () => {
-      setupFetchMock({
-        // Pattern matching - partial URL that will be found via includes()
-        'SortBy=Name&Limit=50&StartIndex=0': {
-          items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
-          total: 1,
-        },
-        'IncludeItemTypes=MusicAlbum': { items: [], total: 0 },
-        'IncludeItemTypes=Playlist': { items: [], total: 0 },
-        '/Genres': { items: [], total: 0 },
-        '/Views': { items: [], total: 0 },
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      // artists, albumArtists, albums, playlists, genres — all 5 tabs are loaded,
-      // plus one /Users/{id}/Views call to resolve the music library id for /Genres
-      expect(mockFetch).toHaveBeenCalledTimes(6);
+  it('fetches all 5 tabs in parallel', async () => {
+    setupFetchMock({
+      // Pattern matching - partial URL that will be found via includes()
+      'SortBy=Name&Limit=50&StartIndex=0': {
+        items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
+        total: 1,
+      },
+      'IncludeItemTypes=MusicAlbum': { items: [], total: 0 },
+      'IncludeItemTypes=Playlist': { items: [], total: 0 },
+      '/Genres': { items: [], total: 0 },
+      '/Views': { items: [], total: 0 },
     });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    // artists, albumArtists, albums, playlists, genres — all 5 tabs are loaded,
+    // plus one /Users/{id}/Views call to resolve the music library id for /Genres
+    expect(mockFetch).toHaveBeenCalledTimes(6);
   });
+});
 
-  describe('loadMore', () => {
-    it('appends items with deduplication by Id', async () => {
-      setupFetchMock({
-        // Initial load - 1 artist
-        'SortBy=Name&Limit=50&StartIndex=0': {
-          items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
-          total: 4,
-        },
-        // Load more - 2 artists (1 duplicate, 1 new)
-        'SortBy=Name&Limit=50&StartIndex=1': {
-          items: [
-            { Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }, // duplicate
-            { Id: 'artist-2', Name: 'Artist 2', AlbumCount: 3, ImageTags: {} }, // new
-          ],
-          total: 4,
-        },
-        'IncludeItemTypes=MusicAlbum': { items: [], total: 0 },
-        'IncludeItemTypes=Playlist': { items: [], total: 0 },
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      // Verify initial load
-      expect(result.current.artists).toHaveLength(1);
-      expect(result.current.artists[0].Id).toBe('artist-1');
-
-      await act(async () => {
-        await result.current.loadMore('artists');
-      });
-
-      // Should have only 2 unique artists (deduped)
-      const uniqueIds = new Set(result.current.artists.map((a) => a.Id));
-      expect(uniqueIds.size).toBe(2);
-    });
-  });
-
-  describe('handleTabChange', () => {
-    it('saves scroll position of previous tab', async () => {
-      mockFetch.mockResolvedValue(createMockFetch());
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      // Mock scroll ref
-      const scrollContainer = { scrollTop: 150 };
-      (result.current.contentScrollRef as React.MutableRefObject<HTMLDivElement | null>).current =
-        scrollContainer as unknown as HTMLDivElement;
-
-      await act(async () => {
-        await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      act(() => {
-        result.current.handleTabChange('albums');
-      });
-
-      // Scroll position of 'artists' tab should be saved
-      expect(result.current.pagination.artists.scrollPos).toBe(150);
-    });
-  });
-
-  describe('lazy tab loading', () => {
-    it('loadTab fetches albums data when called directly', async () => {
-      // Start with empty loadedTabs (hook initial state has only 'artists')
-      mockFetch.mockResolvedValue(createMockFetch());
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      // Manually call loadTab for albums (not via handleTabChange, since handleTabChange
-      // also changes activeLibrary and saves scroll position)
-      await act(async () => {
-        await result.current.loadTab('albums');
-      });
-
-      // loadTab should have fetched albums data
-      expect(mockFetch).toHaveBeenCalled();
-      const lastCallUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
-      expect(lastCallUrl.toLowerCase()).toContain('includeitemtypes=musicalbum');
-    });
-  });
-
-  describe('stats', () => {
-    it('populates statsObj correctly after loadStats', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            ArtistCount: 42,
-            AlbumCount: 120,
-            ChildCount: 3000,
-            PlaylistCount: 5,
-            ItemCount: 3100,
-          }),
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadStats('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      expect(result.current.stats).not.toBeNull();
-      expect(result.current.stats?.ArtistCount).toBe(42);
-      expect(result.current.stats?.AlbumCount).toBe(120);
-      expect(result.current.stats?.SongCount).toBe(3000);
-    });
-  });
-
-  describe('selectAllWithCompleteSet', () => {
-    it('fetches additional pages with dynamic page sizing', async () => {
-      mockFetch.mockClear();
-      let fetchCount = 0;
-
-      // Mock returns first page of 50 items with total of 100
-      mockFetch.mockImplementation(() => {
-        fetchCount++;
-        return Promise.resolve({
-          ok: true,
-          json: () => {
-            if (fetchCount === 1) {
-              // First page: 50 items, total 100
-              const items = Array.from({ length: 50 }, (_, i) => ({
-                Id: `artist-${i + 1}`,
-                Name: `Artist ${i + 1}`,
-                AlbumCount: 5,
-                ImageTags: {},
-              }));
-              return Promise.resolve({ Items: items, TotalRecordCount: 100 });
-            }
-            // Second page: remaining 50 items
-            const items = Array.from({ length: 50 }, (_, i) => ({
-              Id: `artist-${i + 51}`,
-              Name: `Artist ${i + 51}`,
-              AlbumCount: 3,
-              ImageTags: {},
-            }));
-            return Promise.resolve({ Items: items, TotalRecordCount: 100 });
-          },
-        });
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      let selectedIds: string[] = [];
-      await act(async () => {
-        await result.current.selectAllWithCompleteSet('artists', (ids) => {
-          selectedIds = ids;
-        });
-      });
-
-      // Should have fetched all 100 items
-      expect(selectedIds).toHaveLength(100);
-      // Should have made 2 fetch calls (initial + additional page)
-      expect(fetchCount).toBeGreaterThanOrEqual(2);
-    });
-
-    it('calls onError with errors and selected count when some pages fail', async () => {
-      mockFetch.mockClear();
-      const onError = vi.fn();
-      let callCount = 0;
-
-      // Setup mock that fails on second page
-      mockFetch.mockImplementation(() => {
-        callCount++;
-        // First call succeeds
-        if (callCount === 1) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                Items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
-                TotalRecordCount: 100,
-              }),
-          });
-        }
-        // Second call fails
-        return Promise.resolve({ ok: false, status: 500 });
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
-      });
-
-      await act(async () => {
-        await result.current.selectAllWithCompleteSet(
-          'artists',
-          () => {},
-          (errors, count) => {
-            onError(errors, count);
-          },
-        );
-      });
-
-      // onError should have been called
-      expect(onError).toHaveBeenCalled();
-      const [errors, count] = onError.mock.calls[0];
-      expect(errors.length).toBeGreaterThan(0);
-      expect(count).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  describe('genres', () => {
-    it('loadTab fetches genres data when called with genres tab', async () => {
-      mockFetch.mockResolvedValue(createGenresFetch());
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadTab('genres');
-      });
-
-      // Should have fetched genres
-      expect(mockFetch).toHaveBeenCalled();
-      const genresCall = (mockFetch.mock.calls as Array<[string]>)
-        .map((c) => c[0])
-        .find((url) => url.includes('/Genres?'));
-      expect(genresCall).toBeDefined();
-      expect(genresCall).toContain('Recursive=true');
-    });
-
-    it('genres data is populated after loadTab genres', async () => {
-      mockFetch.mockResolvedValue(createGenresFetch());
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadTab('genres');
-      });
-
-      expect(result.current.genres).toHaveLength(3);
-      expect(result.current.genres[0].Name).toBe('Rock');
-      expect(result.current.genres[0].LibraryItems).toBe(10);
-    });
-
-    it('handles genres fetch failure gracefully', async () => {
-      mockFetch.mockResolvedValue({ ok: false, status: 500 });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadTab('genres');
-      });
-
-      expect(result.current.genres).toHaveLength(0);
-    });
-
-    it('loadMore fetches from Genres endpoint for genres type', async () => {
-      // Setup mock to track which endpoints are called
-      const fetchCalls: string[] = [];
-      mockFetch.mockImplementation((url: string) => {
-        fetchCalls.push(url);
+describe('loadMore', () => {
+  it('appends items with deduplication by Id', async () => {
+    mockFetch.mockImplementation((url: string) => {
+      // Initial load - 1 artist
+      if (url.includes('StartIndex=0')) {
         return Promise.resolve({
           ok: true,
           json: () =>
             Promise.resolve({
-              Items: [{ Id: 'electronic-id', Name: 'Electronic', ItemCount: 8 }],
-              TotalRecordCount: 5,
+              Items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
+              TotalRecordCount: 4,
             }),
         });
-      });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadTab('genres');
-      });
-
-      await act(async () => {
-        await result.current.loadMore('genres');
-      });
-
-      // Verify loadMore called the Genres endpoint (with startIndex from pagination)
-      // After initial load with 1 item, pagination startIndex = 1
-      const loadMoreCall = fetchCalls.find(
-        (url) => url.includes('/Genres?') && url.includes('StartIndex=1'),
-      );
-      expect(loadMoreCall).toBeDefined();
-      expect(loadMoreCall).toContain('Recursive=true');
-    });
-
-    it('fetchAllIds fetches from Genres endpoint for genres type', async () => {
-      mockFetch.mockResolvedValue({
+      }
+      // Load more - 2 artists (1 duplicate, 1 new)
+      return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
-            Items: [{ Id: 'rock-id', Name: 'Rock', ItemCount: 10 }],
-            TotalRecordCount: 1,
+            Items: [
+              { Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }, // duplicate
+              { Id: 'artist-2', Name: 'Artist 2', AlbumCount: 3, ImageTags: {} }, // new
+            ],
+            TotalRecordCount: 4,
           }),
       });
-
-      const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
-
-      await act(async () => {
-        await result.current.loadTab('genres');
-      });
-
-      let fetchedIds: string[] = [];
-      await act(async () => {
-        const res = await result.current.fetchAllIds('genres');
-        fetchedIds = res.ids;
-      });
-
-      // Verify genres use Id as ID (not Name field)
-      expect(fetchedIds).toContain('rock-id');
     });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    // Verify initial load
+    expect(result.current.artists).toHaveLength(1);
+    expect(result.current.artists[0].Id).toBe('artist-1');
+
+    await act(async () => {
+      await result.current.loadMore('artists');
+    });
+
+    // Should have only 2 unique artists (deduped)
+    const uniqueIds = new Set(result.current.artists.map((a) => a.Id));
+    expect(uniqueIds.size).toBe(2);
+  });
+});
+
+describe('handleTabChange', () => {
+  it('saves scroll position of previous tab', async () => {
+    mockFetch.mockResolvedValue(createMockFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    // Mock scroll ref
+    const scrollContainer = { scrollTop: 150 };
+    (result.current.contentScrollRef as React.MutableRefObject<HTMLDivElement | null>).current =
+      scrollContainer as unknown as HTMLDivElement;
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    act(() => {
+      result.current.handleTabChange('albums');
+    });
+
+    // Scroll position of 'artists' tab should be saved
+    expect(result.current.pagination.artists.scrollPos).toBe(150);
+  });
+});
+
+describe('lazy tab loading', () => {
+  it('loadTab fetches albums data when called directly', async () => {
+    // Start with empty loadedTabs (hook initial state has only 'artists')
+    mockFetch.mockResolvedValue(createMockFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    // Manually call loadTab for albums (not via handleTabChange, since handleTabChange
+    // also changes activeLibrary and saves scroll position)
+    await act(async () => {
+      await result.current.loadTab('albums');
+    });
+
+    // loadTab should have fetched albums data
+    expect(mockFetch).toHaveBeenCalled();
+    const lastCallUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+    expect(lastCallUrl.toLowerCase()).toContain('includeitemtypes=musicalbum');
+  });
+});
+
+describe('stats', () => {
+  it('populates statsObj correctly after loadStats', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          ArtistCount: 42,
+          AlbumCount: 120,
+          ChildCount: 3000,
+          PlaylistCount: 5,
+          ItemCount: 3100,
+        }),
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadStats('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    expect(result.current.stats).not.toBeNull();
+    expect(result.current.stats?.ArtistCount).toBe(42);
+    expect(result.current.stats?.AlbumCount).toBe(120);
+    expect(result.current.stats?.SongCount).toBe(3000);
+  });
+});
+
+describe('selectAllWithCompleteSet', () => {
+  it('fetches additional pages with dynamic page sizing', async () => {
+    mockFetch.mockClear();
+    let fetchCount = 0;
+
+    // Mock returns first page of 50 items with total of 100
+    mockFetch.mockImplementation(() => {
+      fetchCount++;
+      return Promise.resolve({
+        ok: true,
+        json: () => {
+          if (fetchCount === 1) {
+            // First page: 50 items, total 100
+            const items = Array.from({ length: 50 }, (_, i) => ({
+              Id: `artist-${i + 1}`,
+              Name: `Artist ${i + 1}`,
+              AlbumCount: 5,
+              ImageTags: {},
+            }));
+            return Promise.resolve({ Items: items, TotalRecordCount: 100 });
+          }
+          // Second page: remaining 50 items
+          const items = Array.from({ length: 50 }, (_, i) => ({
+            Id: `artist-${i + 51}`,
+            Name: `Artist ${i + 51}`,
+            AlbumCount: 3,
+            ImageTags: {},
+          }));
+          return Promise.resolve({ Items: items, TotalRecordCount: 100 });
+        },
+      });
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    let selectedIds: string[] = [];
+    await act(async () => {
+      await result.current.selectAllWithCompleteSet('artists', (ids) => {
+        selectedIds = ids;
+      });
+    });
+
+    // Should have fetched all 100 items
+    expect(selectedIds).toHaveLength(100);
+    // Should have made 2 fetch calls (initial + additional page)
+    expect(fetchCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('calls onError with errors and selected count when some pages fail', async () => {
+    mockFetch.mockClear();
+    const onError = vi.fn();
+    let callCount = 0;
+
+    // Setup mock that fails on second page
+    mockFetch.mockImplementation(() => {
+      callCount++;
+      // First call succeeds
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              Items: [{ Id: 'artist-1', Name: 'Artist 1', AlbumCount: 5, ImageTags: {} }],
+              TotalRecordCount: 100,
+            }),
+        });
+      }
+      // Second call fails
+      return Promise.resolve({ ok: false, status: 500 });
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    await act(async () => {
+      await result.current.selectAllWithCompleteSet(
+        'artists',
+        () => {},
+        (errors, count) => {
+          onError(errors, count);
+        },
+      );
+    });
+
+    // onError should have been called
+    expect(onError).toHaveBeenCalled();
+    const [errors, count] = onError.mock.calls[0];
+    expect(errors.length).toBeGreaterThan(0);
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('genres', () => {
+  it('loadTab fetches genres data when called with genres tab', async () => {
+    mockFetch.mockResolvedValue(createGenresFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    // Should have fetched genres
+    expect(mockFetch).toHaveBeenCalled();
+    const genresCall = (mockFetch.mock.calls as Array<[string]>)
+      .map((c) => c[0])
+      .find((url) => url.includes('/Genres?'));
+    expect(genresCall).toBeDefined();
+    expect(genresCall).toContain('Recursive=true');
+  });
+
+  it('genres data is populated after loadTab genres', async () => {
+    mockFetch.mockResolvedValue(createGenresFetch());
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    expect(result.current.genres).toHaveLength(3);
+    expect(result.current.genres[0].Name).toBe('Rock');
+    expect(result.current.genres[0].LibraryItems).toBe(10);
+  });
+
+  it('handles genres fetch failure gracefully', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    expect(result.current.genres).toHaveLength(0);
+  });
+
+  it('loadMore fetches from Genres endpoint for genres type', async () => {
+    // Setup mock to track which endpoints are called
+    const fetchCalls: string[] = [];
+    mockFetch.mockImplementation((url: string) => {
+      fetchCalls.push(url);
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            Items: [{ Id: 'electronic-id', Name: 'Electronic', ItemCount: 8 }],
+            TotalRecordCount: 5,
+          }),
+      });
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    await act(async () => {
+      await result.current.loadMore('genres');
+    });
+
+    // Verify loadMore called the Genres endpoint (with startIndex from pagination)
+    // After initial load with 1 item, pagination startIndex = 1
+    const loadMoreCall = fetchCalls.find(
+      (url) => url.includes('/Genres?') && url.includes('StartIndex=1'),
+    );
+    expect(loadMoreCall).toBeDefined();
+    expect(loadMoreCall).toContain('Recursive=true');
+  });
+
+  it('fetchAllIds fetches from Genres endpoint for genres type', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          Items: [{ Id: 'rock-id', Name: 'Rock', ItemCount: 10 }],
+          TotalRecordCount: 1,
+        }),
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+
+    let fetchedIds: string[] = [];
+    await act(async () => {
+      const res = await result.current.fetchAllIds('genres');
+      fetchedIds = res.ids;
+    });
+
+    // Verify genres use Id as ID (not Name field)
+    expect(fetchedIds).toContain('rock-id');
   });
 });

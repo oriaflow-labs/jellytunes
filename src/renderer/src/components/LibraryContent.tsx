@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Loader2, X, Search } from 'lucide-react';
+import { Loader2, X, Search, RefreshCw } from 'lucide-react';
 import { LibraryItem } from './LibraryItem';
 import type {
   LibraryTab,
@@ -11,6 +11,7 @@ import type {
   PaginationState,
   LibraryStats,
 } from '../appTypes';
+import type { TabState } from '../hooks/useLibrary';
 
 type SyncFilter = 'all' | 'selected' | 'unselected';
 
@@ -109,6 +110,10 @@ interface LibraryContentProps {
   searchError?: string | null;
   // Stats for confirmation dialog fallback (passed from parent via context or props)
   stats?: LibraryStats | null;
+  // Per-tab load state (drives skeleton / empty / error rendering)
+  tabStates: Record<LibraryTab, TabState>;
+  // Retry loading the given tab
+  onRetryTab: (tab: LibraryTab) => void;
 }
 
 export function LibraryContent({
@@ -144,6 +149,8 @@ export function LibraryContent({
   isSearching,
   searchError,
   stats,
+  tabStates,
+  onRetryTab,
 }: LibraryContentProps): JSX.Element {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
@@ -244,6 +251,28 @@ export function LibraryContent({
           : activeLibrary === 'genres'
             ? 'genres'
             : 'playlists';
+
+  const tabItemLabel =
+    activeLibrary === 'artists'
+      ? 'artists'
+      : activeLibrary === 'albumArtists'
+        ? 'album artists'
+        : activeLibrary === 'albums'
+          ? 'albums'
+          : activeLibrary === 'genres'
+            ? 'genres'
+            : 'playlists';
+
+  const tabErrorMessage =
+    activeLibrary === 'artists'
+      ? "Couldn't load artists"
+      : activeLibrary === 'albumArtists'
+        ? "Couldn't load album artists"
+        : activeLibrary === 'albums'
+          ? "Couldn't load albums"
+          : activeLibrary === 'genres'
+            ? "Couldn't load genres"
+            : "Couldn't load playlists";
   const currentItems =
     activeLibrary === 'artists'
       ? displayArtists
@@ -449,7 +478,7 @@ export function LibraryContent({
             >
               No {tabLabel} found for "{searchQuery}"
             </p>
-          ) : !isSearchActive && !hasResults && !isLoadingMore && currentPagination.total === 0 ? (
+          ) : !isSearchActive && tabStates[activeLibrary] === 'loading' ? (
             <div data-testid="library-skeleton" className="grid gap-0.5">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div
@@ -464,6 +493,32 @@ export function LibraryContent({
                   </div>
                 </div>
               ))}
+            </div>
+          ) : !isSearchActive && tabStates[activeLibrary] === 'error' ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <p className="text-body-lg text-error font-medium">{tabErrorMessage}</p>
+              <p className="text-body-md text-on_surface_variant">Check your server connection</p>
+              <button
+                onClick={() => onRetryTab(activeLibrary)}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-error_container text-error hover:bg-error_container/80 transition-colors text-body-md"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </button>
+            </div>
+          ) : !isSearchActive && !hasResults && tabStates[activeLibrary] === 'loaded' ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <p className="text-body-lg text-on_surface font-medium">No {tabItemLabel}</p>
+              <p className="text-body-md text-on_surface_variant">
+                Add music to your Jellyfin server, then refresh
+              </p>
+              <button
+                onClick={() => onRetryTab(activeLibrary)}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface_container_low border border-outline_variant text-on_surface hover:bg-surface_container_highest transition-colors text-body-md"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </button>
             </div>
           ) : (
             <div data-testid="library-content" className="grid gap-0.5">
