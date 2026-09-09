@@ -648,5 +648,3 @@ describe('retryTab', () => {
     expect(result.current.tabStates.genres).toBe('loaded');
   });
 });
-  });
-});
