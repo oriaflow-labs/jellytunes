@@ -2119,25 +2119,27 @@ class SyncCoreImpl {
       writeStream.on('finish', resolve);
     });
 
-    // Check for cancellation after download stream is buffered, before expensive conversion.
-    this.cancellation.throwIfCancelled();
-
-    let metadata: TrackMetadata = {};
-    if (embedMetadata) {
-      // Read original file metadata and merge with Jellyfin fields — Jellyfin wins on conflicts
-      const originalMeta = await this.deps.converter.readFileMetadata(tmpPath);
-      const jellyfinMeta = this.buildMetadata(track);
-      metadata = mergeMetadata(originalMeta, jellyfinMeta);
-    }
-
-    const embedCover =
-      coverArtMode === 'embed'
-        ? await this.getCoverArtBuffer(track.id, track.albumId, coverArtMode)
-        : undefined;
-
-    // Convert from the buffered temp file (preserves original stream data)
-    const readStream = await this.deps.fs.createReadStream(tmpPath);
+    // tmpPath is on disk from here on — wrap everything through conversion in
+    // try/finally so cancellation (or any other error) can't leak it.
     try {
+      // Check for cancellation after download stream is buffered, before expensive conversion.
+      this.cancellation.throwIfCancelled();
+
+      let metadata: TrackMetadata = {};
+      if (embedMetadata) {
+        // Read original file metadata and merge with Jellyfin fields — Jellyfin wins on conflicts
+        const originalMeta = await this.deps.converter.readFileMetadata(tmpPath);
+        const jellyfinMeta = this.buildMetadata(track);
+        metadata = mergeMetadata(originalMeta, jellyfinMeta);
+      }
+
+      const embedCover =
+        coverArtMode === 'embed'
+          ? await this.getCoverArtBuffer(track.id, track.albumId, coverArtMode)
+          : undefined;
+
+      // Convert from the buffered temp file (preserves original stream data)
+      const readStream = await this.deps.fs.createReadStream(tmpPath);
       const result = await this.deps.converter.convertStreamToMp3WithMeta(
         readStream,
         outputPath,
