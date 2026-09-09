@@ -358,14 +358,15 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
     // Mark tabs as loaded AFTER all data has been fetched to avoid the sync effect
     // overwriting valid data with empty initial pagination state
     // Use Promise.resolve() to defer to next microtask so sync effect runs first
+    // Only set 'loaded' for tabs that are not in 'error' state (fixes HIGH finding)
     void Promise.resolve().then(() => {
       setLoadedTabs(new Set(['artists', 'albumArtists', 'albums', 'playlists', 'genres']));
-      setTabStates({
-        artists: 'loaded',
-        albumArtists: 'loaded',
-        albums: 'loaded',
-        playlists: 'loaded',
-        genres: 'loaded',
+      setTabStates((prev) => {
+        const next: Record<LibraryTab, TabState> = { ...prev };
+        (['artists', 'albumArtists', 'albums', 'playlists', 'genres'] as const).forEach((t) => {
+          if (next[t] !== 'error') next[t] = 'loaded';
+        });
+        return next;
       });
     });
   };
@@ -376,6 +377,7 @@ export function useLibrary(jellyfinConfig: JellyfinConfig | null, userId: string
       next.delete(tab);
       return next;
     });
+    setTabStates((prev) => ({ ...prev, [tab]: 'loading' }));
     await loadTab(tab);
   };
 

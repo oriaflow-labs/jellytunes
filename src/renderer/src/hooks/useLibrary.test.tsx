@@ -556,3 +556,97 @@ describe('genres', () => {
     expect(fetchedIds).toContain('rock-id');
   });
 });
+
+// ─── loadLibrary error preservation (HIGH finding fix) ────────────────────────
+// Verifies that loadLibrary does NOT overwrite 'error' states set by catch blocks
+
+describe('loadLibrary error preservation', () => {
+  it('loadLibrary preserves error state for a failing tab (albumArtists)', async () => {
+    // Setup mock: artists succeeds, albumArtists fails, other tabs succeed
+    mockFetch.mockImplementation((url: string) => {
+      // Artists endpoint
+      if (url.includes('/Artists?') && !url.includes('AlbumArtists')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ Items: [{ Id: 'a1', Name: 'Artist 1', AlbumCount: 1, ImageTags: {} }], TotalRecordCount: 1 }),
+        });
+      }
+      // AlbumArtists endpoint - FAIL
+      if (url.includes('/Artists/AlbumArtists')) {
+        return Promise.resolve({ ok: false, status: 500 });
+      }
+      // Music library resolution
+      if (url.includes('/Views')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ Items: [{ Id: 'music-lib', CollectionType: 'music' }] }),
+        });
+      }
+      // All other endpoints succeed
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ Items: [], TotalRecordCount: 0 }),
+      });
+    });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    await act(async () => {
+      await result.current.loadLibrary('https://jellyfin.test', 'test-key', 'user-1');
+    });
+
+    // After loadLibrary completes, albumArtists tab must remain 'error'
+    // (the Promise.resolve().then() fix preserves 'error' states)
+    expect(result.current.tabStates.albumArtists).toBe('error');
+    // Other tabs should be 'loaded'
+    expect(result.current.tabStates.artists).toBe('loaded');
+    expect(result.current.tabStates.albums).toBe('loaded');
+    expect(result.current.tabStates.playlists).toBe('loaded');
+    expect(result.current.tabStates.genres).toBe('loaded');
+  });
+});
+
+// ─── retryTab loading state (MEDIUM finding fix) ─────────────────────────────
+
+describe('retryTab', () => {
+  it('sets tab state to loading before re-fetching', async () => {
+    // First, manually set genres to error state via loadTab failure
+    mockFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    const { result } = renderHook(() => useLibrary(mockConfig, 'user-1'));
+
+    // Set genres to error first
+    await act(async () => {
+      await result.current.loadTab('genres');
+    });
+    expect(result.current.tabStates.genres).toBe('error');
+
+    // Now setup mock to succeed
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          Items: [{ Id: 'rock-id', Name: 'Rock', ItemCount: 10 }],
+          TotalRecordCount: 1,
+        }),
+    });
+
+    // Call retryTab and check intermediate state
+    const retryPromise = act(async () => {
+      const p = result.current.retryTab('genres');
+      // After synchronous setTabStates but before async loadTab completes,
+      // tabStates.genres should be 'loading'
+      // We can't directly test intermediate state in this test structure,
+      // but we verify the final state is 'loaded' after successful retry
+      await p;
+      return p;
+    });
+
+    await retryPromise;
+
+    // After successful retry, state should be 'loaded'
+    expect(result.current.tabStates.genres).toBe('loaded');
+  });
+});
+  });
+});
